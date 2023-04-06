@@ -30,7 +30,10 @@ typedef struct _UNICODE_PATH_STRING {
 
 PVOID NTAPI RtlAllocateHeap(IN HANDLE HeapHandle, IN ULONG Flags, IN SIZE_T Size);
 BOOLEAN NTAPI RtlFreeHeap(IN HANDLE HeapHandle, IN ULONG Flags, IN PVOID Pointer);
-ULONG NTAPI RtlNtStatusToDosError(IN NTSTATUS Status);
+
+typedef DWORD (NTAPI *pRtlGetLastWin32Error)();
+typedef ULONG (NTAPI *pRtlNtStatusToDosError)(IN NTSTATUS Status);
+typedef VOID (NTAPI *pRtlSetLastWin32Error)(IN DWORD Win32ErrorCode);
 
 typedef NTSTATUS (NTAPI *pRtlAnsiStringToUnicodeString)(OUT PUNICODE_STRING DestinationString, IN PANSI_STRING SourceString, IN BOOL AllocateDestinationString);
 typedef NTSTATUS (NTAPI *pRtlOemStringToUnicodeString)(OUT PUNICODE_STRING DestinationString, IN PCOEM_STRING SourceString, IN BOOL AllocateDestinationString);
@@ -39,9 +42,6 @@ typedef NTSTATUS (NTAPI *pRtlUnicodeStringToOemString)(OUT POEM_STRING Destinati
 
 typedef NTSTATUS (NTAPI *pCurrentCodePageStringToUnicodeString)(OUT PUNICODE_STRING DestinationString, IN PVOID SourceString, IN BOOL AllocateDestinationString);
 typedef NTSTATUS (NTAPI *pUnicodeStringToCurrentCodePageString)(OUT PVOID DestinationString, IN PCUNICODE_STRING SourceString, IN BOOL AllocateDestinationString);
-
-typedef DWORD (NTAPI *pRtlGetLastWin32Error)();
-typedef VOID (NTAPI *pRtlSetLastWin32Error)(IN DWORD Win32ErrorCode);
 
 typedef HRESULT (WINAPI *pCopyFile2)(IN PCWSTR pwszExistingFileName, IN PCWSTR pwszNewFileName, IN COPYFILE2_EXTENDED_PARAMETERS *pExtendedParameters);
 typedef BOOL (WINAPI *pCopyFileTransactedA)(IN LPCSTR lpExistingFileName, IN LPCSTR lpNewFileName, IN LPPROGRESS_ROUTINE lpProgressRoutine, IN LPVOID lpData, IN LPBOOL pbCancel, IN DWORD dwCopyFlags, IN HANDLE hTransaction);
@@ -114,6 +114,8 @@ BOOL WINAPI FreeFullObjectPathBuffer(IN PVOID lpFullObjectPathBuffer);
 int __cdecl getwinerrnocode(IN unsigned long oserrno);
 
 UINT WINAPI DeleteSubFolderW(IN LPCWSTR lpPathName);
+
+ULONG NTAPI alternateRtlNtStatusToDosError(IN NTSTATUS Status);
 
 NTSTATUS NTAPI alternateRtlAnsiStringToUnicodeString(OUT PUNICODE_STRING DestinationString, IN PANSI_STRING SourceString, IN BOOL AllocateDestinationString);
 NTSTATUS NTAPI alternateRtlOemStringToUnicodeString(OUT PUNICODE_STRING DestinationString, IN PCOEM_STRING SourceString, IN BOOL AllocateDestinationString);

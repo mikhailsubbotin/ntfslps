@@ -20,6 +20,7 @@ HANDLE g_hProcessHeap;
 
 pRtlAnsiStringToUnicodeString g_pRtlAnsiStringToUnicodeString;
 pRtlGetLastWin32Error g_pRtlGetLastWin32Error;
+pRtlNtStatusToDosError g_pRtlNtStatusToDosError;
 pRtlOemStringToUnicodeString g_pRtlOemStringToUnicodeString;
 pRtlSetLastWin32Error g_pRtlSetLastWin32Error;
 pRtlUnicodeStringToAnsiString g_pRtlUnicodeStringToAnsiString;
@@ -86,12 +87,20 @@ pWow64RevertWow64FsRedirection g_pWow64RevertWow64FsRedirection;
 /* | GLOBAL CONSTANTS | */
 /* +==================+ */
 
-const CHAR szBackupFileExtension[] = ".bak";
 const WCHAR wcszBackupFileExtension[] = L".bak";
 
 /* +====================+ */
 /* | INTERNAL FUNCTIONS | */
 /* +====================+ */
+
+// alternateRtlNtStatusToDosError
+// ------------------------------
+// Implemented: 100%
+
+ULONG NTAPI alternateRtlNtStatusToDosError(IN NTSTATUS Status)
+{
+    return ERROR_CALL_NOT_IMPLEMENTED;
+}
 
 // alternateRtlAnsiStringToUnicodeString
 // -------------------------------------
@@ -174,7 +183,7 @@ LPWSTR WINAPI AllocateUnicodeString(IN LPCSTR lpString)
         {
             RtlFreeHeap(g_hProcessHeap, 0, UnicodeString.Buffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return NULL;
         }
@@ -234,7 +243,7 @@ UINT WINAPI AnsiPathStringToUnicodePathString(IN LPCSTR lpAnsiString, OUT LPWSTR
 
     if (Status)
     {
-        g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+        g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
         return 0;
     }
@@ -290,7 +299,7 @@ UINT WINAPI AnsiStringToUnicodeString(IN LPCSTR lpAnsiString, OUT LPWSTR lpUnico
 
     if (Status)
     {
-        g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+        g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
         return 0;
     }
@@ -349,7 +358,7 @@ UINT WINAPI UnicodePathStringToAnsiPathString(IN LPCWSTR lpUnicodeString, OUT LP
 
     if (Status)
     {
-        g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+        g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
         return 0;
     }
@@ -405,7 +414,7 @@ UINT WINAPI UnicodeStringToAnsiString(IN LPCWSTR lpUnicodeString, OUT LPSTR lpAn
 
     if (Status)
     {
-        g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+        g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
         return 0;
     }
@@ -475,7 +484,7 @@ DWORD WINAPI GetFullPathAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -549,7 +558,7 @@ DWORD WINAPI GetFullPathAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -623,7 +632,7 @@ DWORD WINAPI GetFullPathAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD
 
         if (Status)
         {
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -651,7 +660,7 @@ DWORD WINAPI GetFullPathAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -723,7 +732,7 @@ DWORD WINAPI GetFullPathAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -842,7 +851,7 @@ DWORD WINAPI GetFullPathExAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -916,7 +925,7 @@ DWORD WINAPI GetFullPathExAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -990,7 +999,7 @@ DWORD WINAPI GetFullPathExAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
 
         if (Status)
         {
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -1018,7 +1027,7 @@ DWORD WINAPI GetFullPathExAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -1090,7 +1099,7 @@ DWORD WINAPI GetFullPathExAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -3793,40 +3802,45 @@ UINT WINAPI NTFSLPS_DeleteFolderW(IN LPCWSTR lpPathName)
 
 DWORD WINAPI NTFSLPS_DumpToFileA(IN LPCSTR lpFileName, IN LPVOID lpMemory, IN UINT nLength, OUT LPUINT lpNumberOfBytesProcessed)
 {
-    HANDLE hFile = NTFSLPS_NewFileA(lpFileName, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, TRUE, FILE_ATTRIBUTE_NORMAL);
+    LPWSTR lpObjectPathBuffer;
+    HANDLE hObject;
+    LONG lDistanceToMoveHigh;
+    DWORD Win32ErrorCode;
 
-    if (hFile == INVALID_HANDLE_VALUE)
+    lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
+
+    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
     {
-        if (lpNumberOfBytesProcessed)
-            *lpNumberOfBytesProcessed = 0;
+        Win32ErrorCode = NO_ERROR;
 
-        return g_pRtlGetLastWin32Error();
-    }
+        hObject = CreateFileW(lpObjectPathBuffer, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
-    if (nLength)
-    {
-        if (!WriteFile(hFile, lpMemory, nLength, lpNumberOfBytesProcessed, NULL))
+        if (hObject != INVALID_HANDLE_VALUE)
         {
-            DWORD Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (nLength)
+            {
+                lDistanceToMoveHigh = 0;
 
-            CloseHandle(hFile);
+                if (SetFilePointer(hObject, 0, &lDistanceToMoveHigh, FILE_END) == INVALID_SET_FILE_POINTER)
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-            g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-            return Win32ErrorCode;
+                if (!Win32ErrorCode && !WriteFile(hObject, lpMemory, nLength, lpNumberOfBytesProcessed, NULL))
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            CloseHandle(hObject);
         }
+        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+        FreeFullObjectPathBuffer(lpObjectPathBuffer);
     }
-    else
-    {
-        if (lpNumberOfBytesProcessed)
-            *lpNumberOfBytesProcessed = 0;
-    }
+    else Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-    CloseHandle(hFile);
+    if (lpNumberOfBytesProcessed && Win32ErrorCode)
+        *lpNumberOfBytesProcessed = 0;
 
-    g_pRtlSetLastWin32Error(NO_ERROR);
+    g_pRtlSetLastWin32Error(Win32ErrorCode);
 
-    return NO_ERROR;
+    return Win32ErrorCode;
 }
 
 // NTFSLPS_DumpToFileW
@@ -3835,40 +3849,45 @@ DWORD WINAPI NTFSLPS_DumpToFileA(IN LPCSTR lpFileName, IN LPVOID lpMemory, IN UI
 
 DWORD WINAPI NTFSLPS_DumpToFileW(IN LPCWSTR lpFileName, IN LPVOID lpMemory, IN UINT nLength, OUT LPUINT lpNumberOfBytesProcessed)
 {
-    HANDLE hFile = NTFSLPS_NewFileW(lpFileName, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, TRUE, FILE_ATTRIBUTE_NORMAL);
+    LPWSTR lpObjectPathBuffer;
+    HANDLE hObject;
+    LONG lDistanceToMoveHigh;
+    DWORD Win32ErrorCode;
 
-    if (hFile == INVALID_HANDLE_VALUE)
+    lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
+
+    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
     {
-        if (lpNumberOfBytesProcessed)
-            *lpNumberOfBytesProcessed = 0;
+        Win32ErrorCode = NO_ERROR;
 
-        return g_pRtlGetLastWin32Error();
-    }
+        hObject = CreateFileW(lpObjectPathBuffer, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 
-    if (nLength)
-    {
-        if (!WriteFile(hFile, lpMemory, nLength, lpNumberOfBytesProcessed, NULL))
+        if (hObject != INVALID_HANDLE_VALUE)
         {
-            DWORD Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (nLength)
+            {
+                lDistanceToMoveHigh = 0;
 
-            CloseHandle(hFile);
+                if (SetFilePointer(hObject, 0, &lDistanceToMoveHigh, FILE_END) == INVALID_SET_FILE_POINTER)
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-            g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-            return Win32ErrorCode;
+                if (!Win32ErrorCode && !WriteFile(hObject, lpMemory, nLength, lpNumberOfBytesProcessed, NULL))
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            CloseHandle(hObject);
         }
+        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+        FreeFullObjectPathBuffer(lpObjectPathBuffer);
     }
-    else
-    {
-        if (lpNumberOfBytesProcessed)
-            *lpNumberOfBytesProcessed = 0;
-    }
+    else Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-    CloseHandle(hFile);
+    if (lpNumberOfBytesProcessed && Win32ErrorCode)
+        *lpNumberOfBytesProcessed = 0;
 
-    g_pRtlSetLastWin32Error(NO_ERROR);
+    g_pRtlSetLastWin32Error(Win32ErrorCode);
 
-    return NO_ERROR;
+    return Win32ErrorCode;
 }
 
 // NTFSLPS_FindFirstFileA
@@ -4981,7 +5000,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -5048,7 +5067,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
                     RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
                     RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                    g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
                     return 0;
                 }
@@ -5100,7 +5119,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
                     RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
                     RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                    g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
                     return 0;
                 }
@@ -5133,7 +5152,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -5200,7 +5219,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
                     RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
                     RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                    g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
                     return 0;
                 }
@@ -5252,7 +5271,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
                     RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
                     RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                    g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
                     return 0;
                 }
@@ -5298,7 +5317,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -5363,7 +5382,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
                     RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
                     RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                    g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
                     return 0;
                 }
@@ -5415,7 +5434,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
                     RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
                     RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                    g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
                     return 0;
                 }
@@ -5448,7 +5467,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
         {
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-            g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
             return 0;
         }
@@ -5513,7 +5532,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
                     RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
                     RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                    g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
                     return 0;
                 }
@@ -5567,7 +5586,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
                     RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
                     RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                    g_pRtlSetLastWin32Error(RtlNtStatusToDosError(Status));
+                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
 
                     return 0;
                 }
@@ -8250,15 +8269,20 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved)
             if (!g_pRtlAnsiStringToUnicodeString)
                 g_pRtlAnsiStringToUnicodeString = (pRtlAnsiStringToUnicodeString) alternateRtlAnsiStringToUnicodeString;
 
-            g_pRtlOemStringToUnicodeString = (pRtlOemStringToUnicodeString) GetProcAddress(hDynamicLinkLibrary, "RtlOemStringToUnicodeString");
-
-            if (!g_pRtlOemStringToUnicodeString)
-                g_pRtlOemStringToUnicodeString = (pRtlOemStringToUnicodeString) alternateRtlOemStringToUnicodeString;
-
             g_pRtlGetLastWin32Error = (pRtlGetLastWin32Error) GetProcAddress(hDynamicLinkLibrary, "RtlGetLastWin32Error");
 
             if (!g_pRtlGetLastWin32Error)
                 g_pRtlGetLastWin32Error = (pRtlGetLastWin32Error) GetLastError;
+
+            g_pRtlNtStatusToDosError = (pRtlNtStatusToDosError) GetProcAddress(hDynamicLinkLibrary, "RtlNtStatusToDosError");
+
+            if (!g_pRtlNtStatusToDosError)
+                g_pRtlNtStatusToDosError = (pRtlNtStatusToDosError) alternateRtlNtStatusToDosError;
+
+            g_pRtlOemStringToUnicodeString = (pRtlOemStringToUnicodeString) GetProcAddress(hDynamicLinkLibrary, "RtlOemStringToUnicodeString");
+
+            if (!g_pRtlOemStringToUnicodeString)
+                g_pRtlOemStringToUnicodeString = (pRtlOemStringToUnicodeString) alternateRtlOemStringToUnicodeString;
 
             g_pRtlSetLastWin32Error = (pRtlSetLastWin32Error) GetProcAddress(hDynamicLinkLibrary, "RtlSetLastWin32Error");
 
