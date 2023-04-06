@@ -67,10 +67,10 @@ NTFSLPSAPI BOOL WINAPI NTFSLPS_CreateDirectoryTransactedW(IN LPCWSTR lpTemplateD
 NTFSLPSAPI BOOL WINAPI NTFSLPS_CreateDirectoryW(IN LPCWSTR lpPathName, IN LPSECURITY_ATTRIBUTES lpSecurityAttributes);
 NTFSLPSAPI HANDLE WINAPI NTFSLPS_CreateFile2(IN LPCWSTR lpFileName, IN DWORD dwDesiredAccess, IN DWORD dwShareMode, IN DWORD dwCreationDisposition, IN LPCREATEFILE2_EXTENDED_PARAMETERS pCreateExParams);
 NTFSLPSAPI HANDLE WINAPI NTFSLPS_CreateFileA(IN LPCSTR lpFileName, IN DWORD dwDesiredAccess, IN DWORD dwShareMode, IN LPSECURITY_ATTRIBUTES lpSecurityAttributes, IN DWORD dwCreationDisposition, IN DWORD dwFlagsAndAttributes, IN HANDLE hTemplateFile);
-NTFSLPSAPI DWORD WINAPI NTFSLPS_CreateFileBackupA(IN LPCSTR lpExistingFileName, IN LPCSTR lpNewFileName);
+NTFSLPSAPI DWORD WINAPI NTFSLPS_CreateFileBackupA(IN LPCSTR lpExistingFileName);
 NTFSLPSAPI UINT WINAPI NTFSLPS_CreateFileBackupExA(IN LPCSTR lpExistingFileName, IN LPCSTR lpNewFileName, IN BOOL bNumerate);
 NTFSLPSAPI UINT WINAPI NTFSLPS_CreateFileBackupExW(IN LPCWSTR lpExistingFileName, IN LPCWSTR lpNewFileName, IN BOOL bNumerate);
-NTFSLPSAPI DWORD WINAPI NTFSLPS_CreateFileBackupW(IN LPCWSTR lpExistingFileName, IN LPCWSTR lpNewFileName);
+NTFSLPSAPI DWORD WINAPI NTFSLPS_CreateFileBackupW(IN LPCWSTR lpExistingFileName);
 NTFSLPSAPI HANDLE WINAPI NTFSLPS_CreateFileTransactedA(IN LPCSTR lpFileName, IN DWORD dwDesiredAccess, IN DWORD dwShareMode, IN LPSECURITY_ATTRIBUTES lpSecurityAttributes, IN DWORD dwCreationDisposition, IN DWORD dwFlagsAndAttributes, IN HANDLE hTemplateFile, IN HANDLE hTransaction, IN PUSHORT pusMiniVersion, IN PVOID lpExtendedParameter);
 NTFSLPSAPI HANDLE WINAPI NTFSLPS_CreateFileTransactedW(IN LPCWSTR lpFileName, IN DWORD dwDesiredAccess, IN DWORD dwShareMode, IN LPSECURITY_ATTRIBUTES lpSecurityAttributes, IN DWORD dwCreationDisposition, IN DWORD dwFlagsAndAttributes, IN HANDLE hTemplateFile, IN HANDLE hTransaction, IN PUSHORT pusMiniVersion, IN PVOID lpExtendedParameter);
 NTFSLPSAPI HANDLE WINAPI NTFSLPS_CreateFileW(IN LPCWSTR lpFileName, IN DWORD dwDesiredAccess, IN DWORD dwShareMode, IN LPSECURITY_ATTRIBUTES lpSecurityAttributes, IN DWORD dwCreationDisposition, IN DWORD dwFlagsAndAttributes, IN HANDLE hTemplateFile);

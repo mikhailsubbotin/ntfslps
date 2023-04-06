@@ -2218,49 +2218,45 @@ HANDLE WINAPI NTFSLPS_CreateFileA(IN LPCSTR lpFileName, IN DWORD dwDesiredAccess
 // -------------------------
 // Implemented: 100%
 
-DWORD WINAPI NTFSLPS_CreateFileBackupA(IN LPCSTR lpExistingFileName, IN LPCSTR lpNewFileName)
+DWORD WINAPI NTFSLPS_CreateFileBackupA(IN LPCSTR lpExistingFileName)
 {
     LPWSTR lpExistingFilePathBuffer;
     UINT cExistingFilePathLength;
     LPWSTR lpBackupFilePathBuffer;
     UINT cBackupFilePathBufferLength;
-    DWORD Win32ErrorCode = NO_ERROR;
+    DWORD Win32ErrorCode;
 
-    if (lpNewFileName && lpNewFileName[0] != (CHAR) 0)
+    if (!lpExistingFileName || lpExistingFileName[0] == (CHAR) 0)
     {
-        if (!NTFSLPS_CopyFileA(lpExistingFileName, lpNewFileName, FALSE))
-            return g_pRtlGetLastWin32Error();
+        g_pRtlSetLastWin32Error(ERROR_PATH_NOT_FOUND);
+
+        return ERROR_PATH_NOT_FOUND;
     }
-    else
-    {
-        if (!lpExistingFileName || lpExistingFileName[0] == (CHAR) 0)
-        {
-            g_pRtlSetLastWin32Error(ERROR_PATH_NOT_FOUND);
 
-            return ERROR_PATH_NOT_FOUND;
-        }
+    lpExistingFilePathBuffer = GetFullObjectPathExA(lpExistingFileName, TRUE);
 
-        lpExistingFilePathBuffer = GetFullObjectPathExA(lpExistingFileName, TRUE);
+    if (!lpExistingFilePathBuffer)
+        return g_pRtlGetLastWin32Error();
 
-        if (!lpExistingFilePathBuffer)
-            return g_pRtlGetLastWin32Error();
+    cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
 
-        cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
+    cBackupFilePathBufferLength = (cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) * sizeof(WCHAR);
 
-        cBackupFilePathBufferLength = (cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) * sizeof(WCHAR);
+    lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
 
-        lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
+    memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
+    memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
 
-        memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
-        memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
+    if (CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, FALSE))
+        Win32ErrorCode = NO_ERROR;
+    else Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, FALSE))
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+    RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
 
-        RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
+    FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
 
-        FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-    }
+    g_pRtlSetLastWin32Error(Win32ErrorCode);
+
     return Win32ErrorCode;
 }
 
@@ -2274,89 +2270,136 @@ UINT WINAPI NTFSLPS_CreateFileBackupExA(IN LPCSTR lpExistingFileName, IN LPCSTR 
     UINT cExistingFilePathLength;
     LPWSTR lpBackupFilePathBuffer;
     UINT cBackupFilePathBufferLength;
-    UINT uCounter = 0;
+    DWORD Win32ErrorCode = NO_ERROR;
+    UINT uCounter = -1;
+
+    if (!lpExistingFileName || lpExistingFileName[0] == (CHAR) 0)
+    {
+        g_pRtlSetLastWin32Error(ERROR_BAD_PATHNAME);
+
+        return uCounter;
+    }
 
     if (lpNewFileName && lpNewFileName[0] != (CHAR) 0)
     {
-        if (!NTFSLPS_CopyFileA(lpExistingFileName, lpNewFileName, FALSE))
-            return -1;
+        lpExistingFilePathBuffer = GetFullObjectPathA(lpExistingFileName);
+
+        if (lpExistingFilePathBuffer)
+        {
+            lpBackupFilePathBuffer = GetFullObjectPathExA(lpNewFileName, TRUE);
+
+            if (lpBackupFilePathBuffer)
+            {
+                if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                {
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                    if (Win32ErrorCode == ERROR_FILE_EXISTS)
+                    {
+                        uCounter = 1;
+
+                        cExistingFilePathLength = wcslen(lpBackupFilePathBuffer);
+
+                        *(lpBackupFilePathBuffer + cExistingFilePathLength) = (WCHAR) (unsigned int) '.';
+
+                        _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
+
+                        while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                        {
+                            Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                            if (Win32ErrorCode != ERROR_FILE_EXISTS)
+                            {
+                                uCounter = -1;
+
+                                break;
+                            }
+
+                            if (uCounter >= 4294967294)
+                            {
+                                Win32ErrorCode = ERROR_CANNOT_MAKE;
+
+                                uCounter = -1;
+
+                                break;
+                            }
+                            uCounter++;
+
+                            _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
+                        }
+                    }
+                }
+                FreeFullObjectPathBuffer(lpBackupFilePathBuffer);
+            }
+            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
     }
     else
     {
-        if (!lpExistingFileName || lpExistingFileName[0] == (CHAR) 0)
-        {
-            g_pRtlSetLastWin32Error(ERROR_PATH_NOT_FOUND);
-
-            return -1;
-        }
-
         lpExistingFilePathBuffer = GetFullObjectPathExA(lpExistingFileName, TRUE);
 
-        if (!lpExistingFilePathBuffer)
-            return -1;
-
-        cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
-
-        cBackupFilePathBufferLength = (cExistingFilePathLength + (sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) + 10) * sizeof(WCHAR);
-
-        lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
-
-        if (!lpBackupFilePathBuffer)
+        if (lpExistingFilePathBuffer)
         {
+            cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
+
+            cBackupFilePathBufferLength = (cExistingFilePathLength + (sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) + 10) * sizeof(WCHAR);
+
+            lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
+
+            if (lpBackupFilePathBuffer)
+            {
+                memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
+                memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
+
+                if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                {
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                    if (g_pRtlGetLastWin32Error() == ERROR_FILE_EXISTS)
+                    {
+                        uCounter = 1;
+
+                        *(lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR) - 1) = (WCHAR) (unsigned int) '.';
+
+                        _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
+
+                        while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                        {
+                            Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                            if (Win32ErrorCode != ERROR_FILE_EXISTS)
+                            {
+                                uCounter = -1;
+
+                                break;
+                            }
+
+                            if (uCounter >= 4294967294)
+                            {
+                                Win32ErrorCode = ERROR_CANNOT_MAKE;
+
+                                uCounter = -1;
+
+                                break;
+                            }
+                            uCounter++;
+
+                            _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
+                        }
+                    }
+                }
+                RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
+            }
+            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
             FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
 
-            return -1;
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-
-        memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
-        memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
-
-        if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
-        {
-            if (g_pRtlGetLastWin32Error() != ERROR_FILE_EXISTS)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-                FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-
-                return -1;
-            }
-
-            *(lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR) - 1) = (WCHAR) (unsigned int) '.';
-
-            uCounter++;
-
-            _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
-
-            while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
-            {
-                if (g_pRtlGetLastWin32Error() != ERROR_FILE_EXISTS)
-                {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-
-                    FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-
-                    return -1;
-                }
-
-                if (uCounter == 4294967294)
-                {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-
-                    FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-
-                    g_pRtlSetLastWin32Error(ERROR_CANNOT_MAKE);
-
-                    return -1;
-                }
-
-                uCounter++;
-
-                _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
-            }
-        }
-        RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-
-        FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
     }
     return uCounter;
 }
@@ -2371,90 +2414,136 @@ UINT WINAPI NTFSLPS_CreateFileBackupExW(IN LPCWSTR lpExistingFileName, IN LPCWST
     UINT cExistingFilePathLength;
     LPWSTR lpBackupFilePathBuffer;
     UINT cBackupFilePathBufferLength;
-    UINT uCounter = 0;
+    DWORD Win32ErrorCode = NO_ERROR;
+    UINT uCounter = -1;
+
+    if (!lpExistingFileName || lpExistingFileName[0] == (WCHAR) 0)
+    {
+        g_pRtlSetLastWin32Error(ERROR_BAD_PATHNAME);
+
+        return uCounter;
+    }
 
     if (lpNewFileName && lpNewFileName[0] != (WCHAR) 0)
     {
-        if (!NTFSLPS_CopyFileW(lpExistingFileName, lpNewFileName, FALSE))
-            return -1;
+        lpExistingFilePathBuffer = GetFullObjectPathW(lpExistingFileName);
+
+        if (lpExistingFilePathBuffer)
+        {
+            lpBackupFilePathBuffer = GetFullObjectPathExW(lpNewFileName, TRUE);
+
+            if (lpBackupFilePathBuffer)
+            {
+                if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                {
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                    if (Win32ErrorCode == ERROR_FILE_EXISTS)
+                    {
+                        uCounter = 1;
+
+                        cExistingFilePathLength = wcslen(lpBackupFilePathBuffer);
+
+                        *(lpBackupFilePathBuffer + cExistingFilePathLength) = (WCHAR) (unsigned int) '.';
+
+                        _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
+
+                        while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                        {
+                            Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                            if (Win32ErrorCode != ERROR_FILE_EXISTS)
+                            {
+                                uCounter = -1;
+
+                                break;
+                            }
+
+                            if (uCounter >= 4294967294)
+                            {
+                                Win32ErrorCode = ERROR_CANNOT_MAKE;
+
+                                uCounter = -1;
+
+                                break;
+                            }
+                            uCounter++;
+
+                            _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
+                        }
+                    }
+                }
+                FreeFullObjectPathBuffer(lpBackupFilePathBuffer);
+            }
+            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
     }
     else
     {
-        if (!lpExistingFileName || lpExistingFileName[0] == (WCHAR) 0)
-        {
-            g_pRtlSetLastWin32Error(ERROR_PATH_NOT_FOUND);
-
-            return -1;
-        }
-
         lpExistingFilePathBuffer = GetFullObjectPathExW(lpExistingFileName, TRUE);
 
-        if (!lpExistingFilePathBuffer)
-            return -1;
-
-        cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
-
-        cBackupFilePathBufferLength = (cExistingFilePathLength + (sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) + 10) * sizeof(WCHAR);
-
-        lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
-
-        if (!lpBackupFilePathBuffer)
+        if (lpExistingFilePathBuffer)
         {
+            cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
+
+            cBackupFilePathBufferLength = (cExistingFilePathLength + (sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) + 10) * sizeof(WCHAR);
+
+            lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
+
+            if (lpBackupFilePathBuffer)
+            {
+                memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
+                memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
+
+                if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                {
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                    if (g_pRtlGetLastWin32Error() == ERROR_FILE_EXISTS)
+                    {
+                        uCounter = 1;
+
+                        *(lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR) - 1) = (WCHAR) (unsigned int) '.';
+
+                        _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
+
+                        while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                        {
+                            Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                            if (Win32ErrorCode != ERROR_FILE_EXISTS)
+                            {
+                                uCounter = -1;
+
+                                break;
+                            }
+
+                            if (uCounter >= 4294967294)
+                            {
+                                Win32ErrorCode = ERROR_CANNOT_MAKE;
+
+                                uCounter = -1;
+
+                                break;
+                            }
+                            uCounter++;
+
+                            _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
+                        }
+                    }
+                }
+                RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
+            }
+            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
             FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
 
-            return -1;
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-
-        memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
-        memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
-
-        if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
-        {
-            if (g_pRtlGetLastWin32Error() != ERROR_FILE_EXISTS)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-
-                FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-
-                return -1;
-            }
-
-            *(lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR) - 1) = (WCHAR) (unsigned int) '.';
-
-            uCounter++;
-
-            _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
-
-            while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
-            {
-                if (g_pRtlGetLastWin32Error() != ERROR_FILE_EXISTS)
-                {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-
-                    FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-
-                    return -1;
-                }
-
-                if (uCounter == 4294967294)
-                {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-
-                    FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-
-                    g_pRtlSetLastWin32Error(ERROR_CANNOT_MAKE);
-
-                    return -1;
-                }
-
-                uCounter++;
-
-                _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
-            }
-        }
-        RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-
-        FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
     }
     return uCounter;
 }
@@ -2463,48 +2552,44 @@ UINT WINAPI NTFSLPS_CreateFileBackupExW(IN LPCWSTR lpExistingFileName, IN LPCWST
 // -------------------------
 // Implemented: 100%
 
-DWORD WINAPI NTFSLPS_CreateFileBackupW(IN LPCWSTR lpExistingFileName, IN LPCWSTR lpNewFileName)
+DWORD WINAPI NTFSLPS_CreateFileBackupW(IN LPCWSTR lpExistingFileName)
 {
     LPWSTR lpExistingFilePathBuffer;
     UINT cExistingFilePathLength;
     LPWSTR lpBackupFilePathBuffer;
     UINT cBackupFilePathBufferLength;
-    DWORD Win32ErrorCode = NO_ERROR;
+    DWORD Win32ErrorCode;
 
-    if (lpNewFileName && lpNewFileName[0] != (WCHAR) 0)
+    if (!lpExistingFileName || lpExistingFileName[0] == (WCHAR) 0)
     {
-        if (!NTFSLPS_CopyFileW(lpExistingFileName, lpNewFileName, FALSE))
-            return g_pRtlGetLastWin32Error();
+        g_pRtlSetLastWin32Error(ERROR_PATH_NOT_FOUND);
+
+        return ERROR_PATH_NOT_FOUND;
     }
-    else
-    {
-        if (!lpExistingFileName || lpExistingFileName[0] == (WCHAR) 0)
-        {
-            g_pRtlSetLastWin32Error(ERROR_PATH_NOT_FOUND);
 
-            return ERROR_PATH_NOT_FOUND;
-        }
+    lpExistingFilePathBuffer = GetFullObjectPathExW(lpExistingFileName, TRUE);
 
-        lpExistingFilePathBuffer = GetFullObjectPathExW(lpExistingFileName, TRUE);
+    if (!lpExistingFilePathBuffer)
+        return g_pRtlGetLastWin32Error();
 
-        if (!lpExistingFilePathBuffer)
-            return g_pRtlGetLastWin32Error();
+    cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
 
-        cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
+    cBackupFilePathBufferLength = (cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) * sizeof(WCHAR);
 
-        cBackupFilePathBufferLength = (cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) * sizeof(WCHAR);
+    lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
 
-        lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
+    memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
+    memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
 
-        memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
-        memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
+    if (CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, FALSE))
+        Win32ErrorCode = NO_ERROR;
+    else Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, FALSE))
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+    RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
 
-        RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-        FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-    }
+    FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+
+    g_pRtlSetLastWin32Error(Win32ErrorCode);
 
     return Win32ErrorCode;
 }
