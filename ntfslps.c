@@ -7194,7 +7194,7 @@ DWORD WINAPI NTFSLPS_SearchPathA(IN LPCSTR lpPath, IN LPCSTR lpFileName, IN LPCS
 
         if (lpFilePathBuffer || !g_pRtlGetLastWin32Error())
         {
-            lpExtensionBuffer = AllocateUnicodeString(lpFileName);
+            lpExtensionBuffer = AllocateUnicodeString(lpExtension);
 
             if (lpExtensionBuffer || !g_pRtlGetLastWin32Error())
             {
