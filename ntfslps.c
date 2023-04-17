@@ -1846,31 +1846,35 @@ BOOL WINAPI NTFSLPS_CopyFileTransactedA(IN LPCSTR lpExistingFileName, IN LPCSTR 
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpExistingObjectPathBuffer = GetFullObjectPathA(lpExistingFileName);
-
-    if (lpExistingObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpNewObjectPathBuffer = GetFullObjectPathA(lpNewFileName);
+        lpExistingObjectPathBuffer = GetFullObjectPathA(lpExistingFileName);
 
-        if (lpNewObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        if (lpExistingObjectPathBuffer || !g_pRtlGetLastWin32Error())
         {
-            bResult = g_pCopyFileTransactedW(lpExistingObjectPathBuffer, lpNewObjectPathBuffer, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
+            lpNewObjectPathBuffer = GetFullObjectPathA(lpNewFileName);
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (lpNewObjectPathBuffer || !g_pRtlGetLastWin32Error())
+            {
+                bResult = g_pCopyFileTransactedW(lpExistingObjectPathBuffer, lpNewObjectPathBuffer, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
 
-            FreeFullObjectPathBuffer(lpNewObjectPathBuffer);
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                FreeFullObjectPathBuffer(lpNewObjectPathBuffer);
+            }
+            else
+            {
+                bResult = g_pCopyFileTransactedA(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
+
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            FreeFullObjectPathBuffer(lpExistingObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else
-        {
-            bResult = g_pCopyFileTransactedA(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
-
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-        }
-        FreeFullObjectPathBuffer(lpExistingObjectPathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+        else bResult = g_pCopyFileTransactedA(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
     }
-    else bResult = g_pCopyFileTransactedA(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
+    else bResult = NTFSLPS_CopyFileExA(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, pbCancel, dwCopyFlags);
 
     return bResult;
 }
@@ -1886,31 +1890,35 @@ BOOL WINAPI NTFSLPS_CopyFileTransactedW(IN LPCWSTR lpExistingFileName, IN LPCWST
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpExistingObjectPathBuffer = GetFullObjectPathW(lpExistingFileName);
-
-    if (lpExistingObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpNewObjectPathBuffer = GetFullObjectPathW(lpNewFileName);
+        lpExistingObjectPathBuffer = GetFullObjectPathW(lpExistingFileName);
 
-        if (lpNewObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        if (lpExistingObjectPathBuffer || !g_pRtlGetLastWin32Error())
         {
-            bResult = g_pCopyFileTransactedW(lpExistingObjectPathBuffer, lpNewObjectPathBuffer, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
+            lpNewObjectPathBuffer = GetFullObjectPathW(lpNewFileName);
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (lpNewObjectPathBuffer || !g_pRtlGetLastWin32Error())
+            {
+                bResult = g_pCopyFileTransactedW(lpExistingObjectPathBuffer, lpNewObjectPathBuffer, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
 
-            FreeFullObjectPathBuffer(lpNewObjectPathBuffer);
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                FreeFullObjectPathBuffer(lpNewObjectPathBuffer);
+            }
+            else
+            {
+                bResult = g_pCopyFileTransactedW(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
+
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            FreeFullObjectPathBuffer(lpExistingObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else
-        {
-            bResult = g_pCopyFileTransactedW(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
-
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-        }
-        FreeFullObjectPathBuffer(lpExistingObjectPathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+        else bResult = g_pCopyFileTransactedW(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
     }
-    else bResult = g_pCopyFileTransactedW(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, pbCancel, dwCopyFlags, hTransaction);
+    else bResult = NTFSLPS_CopyFileExW(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, pbCancel, dwCopyFlags);
 
     return bResult;
 }
@@ -2073,31 +2081,35 @@ BOOL WINAPI NTFSLPS_CreateDirectoryTransactedA(IN LPCSTR lpTemplateDirectory, IN
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpTemplateDirectoryPathBuffer = GetFullObjectPathA(lpTemplateDirectory);
-
-    if (lpTemplateDirectoryPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpNewDirectoryPathBuffer = GetFullObjectPathA(lpNewDirectory);
+        lpTemplateDirectoryPathBuffer = GetFullObjectPathA(lpTemplateDirectory);
 
-        if (lpNewDirectoryPathBuffer || !g_pRtlGetLastWin32Error())
+        if (lpTemplateDirectoryPathBuffer || !g_pRtlGetLastWin32Error())
         {
-            bResult = g_pCreateDirectoryTransactedW(lpTemplateDirectoryPathBuffer, lpNewDirectoryPathBuffer, lpSecurityAttributes, hTransaction);
+            lpNewDirectoryPathBuffer = GetFullObjectPathA(lpNewDirectory);
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (lpNewDirectoryPathBuffer || !g_pRtlGetLastWin32Error())
+            {
+                bResult = g_pCreateDirectoryTransactedW(lpTemplateDirectoryPathBuffer, lpNewDirectoryPathBuffer, lpSecurityAttributes, hTransaction);
 
-            FreeFullObjectPathBuffer(lpNewDirectoryPathBuffer);
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                FreeFullObjectPathBuffer(lpNewDirectoryPathBuffer);
+            }
+            else
+            {
+                bResult = g_pCreateDirectoryTransactedA(lpTemplateDirectory, lpNewDirectory, lpSecurityAttributes, hTransaction);
+
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            FreeFullObjectPathBuffer(lpTemplateDirectoryPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else
-        {
-            bResult = g_pCreateDirectoryTransactedA(lpTemplateDirectory, lpNewDirectory, lpSecurityAttributes, hTransaction);
-
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-        }
-        FreeFullObjectPathBuffer(lpTemplateDirectoryPathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+        else bResult = g_pCreateDirectoryTransactedA(lpTemplateDirectory, lpNewDirectory, lpSecurityAttributes, hTransaction);
     }
-    else bResult = g_pCreateDirectoryTransactedA(lpTemplateDirectory, lpNewDirectory, lpSecurityAttributes, hTransaction);
+    else bResult = NTFSLPS_CreateDirectoryExA(lpTemplateDirectory, lpNewDirectory, lpSecurityAttributes);
 
     return bResult;
 }
@@ -2113,31 +2125,35 @@ BOOL WINAPI NTFSLPS_CreateDirectoryTransactedW(IN LPCWSTR lpTemplateDirectory, I
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpTemplateDirectoryPathBuffer = GetFullObjectPathW(lpTemplateDirectory);
-
-    if (lpTemplateDirectoryPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpNewDirectoryPathBuffer = GetFullObjectPathW(lpNewDirectory);
+        lpTemplateDirectoryPathBuffer = GetFullObjectPathW(lpTemplateDirectory);
 
-        if (lpNewDirectoryPathBuffer || !g_pRtlGetLastWin32Error())
+        if (lpTemplateDirectoryPathBuffer || !g_pRtlGetLastWin32Error())
         {
-            bResult = g_pCreateDirectoryTransactedW(lpTemplateDirectoryPathBuffer, lpNewDirectoryPathBuffer, lpSecurityAttributes, hTransaction);
+            lpNewDirectoryPathBuffer = GetFullObjectPathW(lpNewDirectory);
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (lpNewDirectoryPathBuffer || !g_pRtlGetLastWin32Error())
+            {
+                bResult = g_pCreateDirectoryTransactedW(lpTemplateDirectoryPathBuffer, lpNewDirectoryPathBuffer, lpSecurityAttributes, hTransaction);
 
-            FreeFullObjectPathBuffer(lpNewDirectoryPathBuffer);
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                FreeFullObjectPathBuffer(lpNewDirectoryPathBuffer);
+            }
+            else
+            {
+                bResult = g_pCreateDirectoryTransactedW(lpTemplateDirectory, lpNewDirectory, lpSecurityAttributes, hTransaction);
+
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            FreeFullObjectPathBuffer(lpTemplateDirectoryPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else
-        {
-            bResult = g_pCreateDirectoryTransactedW(lpTemplateDirectory, lpNewDirectory, lpSecurityAttributes, hTransaction);
-
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-        }
-        FreeFullObjectPathBuffer(lpTemplateDirectoryPathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+        else bResult = g_pCreateDirectoryTransactedW(lpTemplateDirectory, lpNewDirectory, lpSecurityAttributes, hTransaction);
     }
-    else bResult = g_pCreateDirectoryTransactedW(lpTemplateDirectory, lpNewDirectory, lpSecurityAttributes, hTransaction);
+    else bResult = NTFSLPS_CreateDirectoryExW(lpTemplateDirectory, lpNewDirectory, lpSecurityAttributes);
 
     return bResult;
 }
@@ -3051,31 +3067,35 @@ BOOL WINAPI NTFSLPS_CreateHardLinkTransactedA(IN LPCSTR lpFileName, IN LPCSTR lp
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpFilePathBuffer = GetFullObjectPathA(lpFileName);
-
-    if (lpFilePathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpExistingFilePathBuffer = GetFullObjectPathA(lpExistingFileName);
+        lpFilePathBuffer = GetFullObjectPathA(lpFileName);
 
-        if (lpExistingFilePathBuffer || !g_pRtlGetLastWin32Error())
+        if (lpFilePathBuffer || !g_pRtlGetLastWin32Error())
         {
-            bResult = g_pCreateHardLinkTransactedW(lpFilePathBuffer, lpExistingFilePathBuffer, lpSecurityAttributes, hTransaction);
+            lpExistingFilePathBuffer = GetFullObjectPathA(lpExistingFileName);
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (lpExistingFilePathBuffer || !g_pRtlGetLastWin32Error())
+            {
+                bResult = g_pCreateHardLinkTransactedW(lpFilePathBuffer, lpExistingFilePathBuffer, lpSecurityAttributes, hTransaction);
 
-            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+            }
+            else
+            {
+                bResult = g_pCreateHardLinkTransactedA(lpFileName, lpExistingFileName, lpSecurityAttributes, hTransaction);
+
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            FreeFullObjectPathBuffer(lpFilePathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else
-        {
-            bResult = g_pCreateHardLinkTransactedA(lpFileName, lpExistingFileName, lpSecurityAttributes, hTransaction);
-
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-        }
-        FreeFullObjectPathBuffer(lpFilePathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+        else bResult = g_pCreateHardLinkTransactedA(lpFileName, lpExistingFileName, lpSecurityAttributes, hTransaction);
     }
-    else bResult = g_pCreateHardLinkTransactedA(lpFileName, lpExistingFileName, lpSecurityAttributes, hTransaction);
+    else bResult = NTFSLPS_CreateHardLinkA(lpFileName, lpExistingFileName, lpSecurityAttributes);
 
     return bResult;
 }
@@ -3091,31 +3111,35 @@ BOOL WINAPI NTFSLPS_CreateHardLinkTransactedW(IN LPCWSTR lpFileName, IN LPCWSTR 
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpFilePathBuffer = GetFullObjectPathW(lpFileName);
-
-    if (lpFilePathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpExistingFilePathBuffer = GetFullObjectPathW(lpExistingFileName);
+        lpFilePathBuffer = GetFullObjectPathW(lpFileName);
 
-        if (lpExistingFilePathBuffer || !g_pRtlGetLastWin32Error())
+        if (lpFilePathBuffer || !g_pRtlGetLastWin32Error())
         {
-            bResult = g_pCreateHardLinkTransactedW(lpFilePathBuffer, lpExistingFilePathBuffer, lpSecurityAttributes, hTransaction);
+            lpExistingFilePathBuffer = GetFullObjectPathW(lpExistingFileName);
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (lpExistingFilePathBuffer || !g_pRtlGetLastWin32Error())
+            {
+                bResult = g_pCreateHardLinkTransactedW(lpFilePathBuffer, lpExistingFilePathBuffer, lpSecurityAttributes, hTransaction);
 
-            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+            }
+            else
+            {
+                bResult = g_pCreateHardLinkTransactedW(lpFileName, lpExistingFileName, lpSecurityAttributes, hTransaction);
+
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            FreeFullObjectPathBuffer(lpFilePathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else
-        {
-            bResult = g_pCreateHardLinkTransactedW(lpFileName, lpExistingFileName, lpSecurityAttributes, hTransaction);
-
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-        }
-        FreeFullObjectPathBuffer(lpFilePathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+        else bResult = g_pCreateHardLinkTransactedW(lpFileName, lpExistingFileName, lpSecurityAttributes, hTransaction);
     }
-    else bResult = g_pCreateHardLinkTransactedW(lpFileName, lpExistingFileName, lpSecurityAttributes, hTransaction);
+    else bResult = NTFSLPS_CreateHardLinkW(lpFileName, lpExistingFileName, lpSecurityAttributes);
 
     return bResult;
 }
@@ -3164,7 +3188,7 @@ NTFSLPSAPI BOOL WINAPI NTFSLPS_CreateHardLinkW(IN LPCWSTR lpFileName, IN LPCWSTR
 // ---------------------------
 // Implemented: 100%
 
-BOOL WINAPI NTFSLPS_CreateSymbolicLinkA (IN LPCSTR lpSymlinkFileName, IN LPCSTR lpTargetFileName, IN DWORD dwFlags)
+BOOL WINAPI NTFSLPS_CreateSymbolicLinkA(IN LPCSTR lpSymlinkFileName, IN LPCSTR lpTargetFileName, IN DWORD dwFlags)
 {
     LPWSTR lpSymlinkFilePathBuffer;
     LPWSTR lpTargetFilePathBuffer;
@@ -3211,31 +3235,35 @@ BOOL WINAPI NTFSLPS_CreateSymbolicLinkTransactedA(IN LPCSTR lpSymlinkFileName, I
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpSymlinkFilePathBuffer = GetFullObjectPathA(lpSymlinkFileName);
-
-    if (lpSymlinkFilePathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpTargetFilePathBuffer = GetFullObjectPathA(lpTargetFileName);
+        lpSymlinkFilePathBuffer = GetFullObjectPathA(lpSymlinkFileName);
 
-        if (lpTargetFilePathBuffer || !g_pRtlGetLastWin32Error())
+        if (lpSymlinkFilePathBuffer || !g_pRtlGetLastWin32Error())
         {
-            bResult = g_pCreateSymbolicLinkTransactedW(lpSymlinkFilePathBuffer, lpTargetFilePathBuffer, dwFlags, hTransaction);
+            lpTargetFilePathBuffer = GetFullObjectPathA(lpTargetFileName);
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (lpTargetFilePathBuffer || !g_pRtlGetLastWin32Error())
+            {
+                bResult = g_pCreateSymbolicLinkTransactedW(lpSymlinkFilePathBuffer, lpTargetFilePathBuffer, dwFlags, hTransaction);
 
-            FreeFullObjectPathBuffer(lpTargetFilePathBuffer);
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                FreeFullObjectPathBuffer(lpTargetFilePathBuffer);
+            }
+            else
+            {
+                bResult = g_pCreateSymbolicLinkTransactedA(lpSymlinkFileName, lpTargetFileName, dwFlags, hTransaction);
+
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            FreeFullObjectPathBuffer(lpSymlinkFilePathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else
-        {
-            bResult = g_pCreateSymbolicLinkTransactedA(lpSymlinkFileName, lpTargetFileName, dwFlags, hTransaction);
-
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-        }
-        FreeFullObjectPathBuffer(lpSymlinkFilePathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+        else bResult = g_pCreateSymbolicLinkTransactedA(lpSymlinkFileName, lpTargetFileName, dwFlags, hTransaction);
     }
-    else bResult = g_pCreateSymbolicLinkTransactedA(lpSymlinkFileName, lpTargetFileName, dwFlags, hTransaction);
+    else bResult = NTFSLPS_CreateSymbolicLinkA(lpSymlinkFileName, lpTargetFileName, dwFlags);
 
     return bResult;
 }
@@ -3251,31 +3279,35 @@ BOOL WINAPI NTFSLPS_CreateSymbolicLinkTransactedW(IN LPCWSTR lpSymlinkFileName, 
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpSymlinkFilePathBuffer = GetFullObjectPathW(lpSymlinkFileName);
-
-    if (lpSymlinkFilePathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpTargetFilePathBuffer = GetFullObjectPathW(lpTargetFileName);
+        lpSymlinkFilePathBuffer = GetFullObjectPathW(lpSymlinkFileName);
 
-        if (lpTargetFilePathBuffer || !g_pRtlGetLastWin32Error())
+        if (lpSymlinkFilePathBuffer || !g_pRtlGetLastWin32Error())
         {
-            bResult = g_pCreateSymbolicLinkTransactedW(lpSymlinkFilePathBuffer, lpTargetFilePathBuffer, dwFlags, hTransaction);
+            lpTargetFilePathBuffer = GetFullObjectPathW(lpTargetFileName);
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (lpTargetFilePathBuffer || !g_pRtlGetLastWin32Error())
+            {
+                bResult = g_pCreateSymbolicLinkTransactedW(lpSymlinkFilePathBuffer, lpTargetFilePathBuffer, dwFlags, hTransaction);
 
-            FreeFullObjectPathBuffer(lpTargetFilePathBuffer);
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                FreeFullObjectPathBuffer(lpTargetFilePathBuffer);
+            }
+            else
+            {
+                bResult = g_pCreateSymbolicLinkTransactedW(lpSymlinkFileName, lpTargetFileName, dwFlags, hTransaction);
+
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            FreeFullObjectPathBuffer(lpSymlinkFilePathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else
-        {
-            bResult = g_pCreateSymbolicLinkTransactedW(lpSymlinkFileName, lpTargetFileName, dwFlags, hTransaction);
-
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-        }
-        FreeFullObjectPathBuffer(lpSymlinkFilePathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+        else bResult = g_pCreateSymbolicLinkTransactedW(lpSymlinkFileName, lpTargetFileName, dwFlags, hTransaction);
     }
-    else bResult = g_pCreateSymbolicLinkTransactedW(lpSymlinkFileName, lpTargetFileName, dwFlags, hTransaction);
+    else bResult = NTFSLPS_CreateSymbolicLinkW(lpSymlinkFileName, lpTargetFileName, dwFlags);
 
     return bResult;
 }
@@ -3284,7 +3316,7 @@ BOOL WINAPI NTFSLPS_CreateSymbolicLinkTransactedW(IN LPCWSTR lpSymlinkFileName, 
 // ---------------------------
 // Implemented: 100%
 
-BOOL WINAPI NTFSLPS_CreateSymbolicLinkW (IN LPCWSTR lpSymlinkFileName, IN LPCWSTR lpTargetFileName, IN DWORD dwFlags)
+BOOL WINAPI NTFSLPS_CreateSymbolicLinkW(IN LPCWSTR lpSymlinkFileName, IN LPCWSTR lpTargetFileName, IN DWORD dwFlags)
 {
     LPWSTR lpSymlinkFilePathBuffer;
     LPWSTR lpTargetFilePathBuffer;
@@ -3357,19 +3389,23 @@ BOOL WINAPI NTFSLPS_DeleteFileTransactedA(IN LPCSTR lpFileName, IN HANDLE hTrans
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        bResult = g_pDeleteFileTransactedW(lpObjectPathBuffer, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            bResult = g_pDeleteFileTransactedW(lpObjectPathBuffer, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else bResult = g_pDeleteFileTransactedA(lpFileName, hTransaction);
     }
-    else bResult = g_pDeleteFileTransactedA(lpFileName, hTransaction);
+    else bResult = NTFSLPS_DeleteFileA(lpFileName);
 
     return bResult;
 }
@@ -3384,19 +3420,23 @@ BOOL WINAPI NTFSLPS_DeleteFileTransactedW(IN LPCWSTR lpFileName, IN HANDLE hTran
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        bResult = g_pDeleteFileTransactedW(lpObjectPathBuffer, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            bResult = g_pDeleteFileTransactedW(lpObjectPathBuffer, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else bResult = g_pDeleteFileTransactedW(lpFileName, hTransaction);
     }
-    else bResult = g_pDeleteFileTransactedW(lpFileName, hTransaction);
+    else bResult = NTFSLPS_DeleteFileW(lpFileName);
 
     return bResult;
 }
@@ -4046,11 +4086,11 @@ HANDLE WINAPI NTFSLPS_FindFirstFileNameA(IN LPCSTR lpFileName, IN DWORD dwFlags,
 
             g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else goto CallFindFirstFileNameA;
+        else goto call_FindFirstFileNameA;
     }
     else
     {
-        CallFindFirstFileNameA:
+        call_FindFirstFileNameA:
 
         hResult = g_pFindFirstFileNameA(lpFileName, dwFlags, StringLength, LinkName);
     }
@@ -4068,33 +4108,42 @@ HANDLE WINAPI NTFSLPS_FindFirstFileNameTransactedA(IN LPCSTR lpFileName, IN DWOR
     DWORD Win32ErrorCode;
     HANDLE hResult;
 
-    if (StringLength)
+    if (hTransaction)
     {
         lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
 
         if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
         {
-            lpLinkNameBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, *StringLength * sizeof(WCHAR));
-
-            if (lpLinkNameBuffer)
+            if (StringLength && *StringLength && LinkName)
             {
-                hResult = g_pFindFirstFileNameTransactedW(lpObjectPathBuffer, dwFlags, StringLength, lpLinkNameBuffer, hTransaction);
+                lpLinkNameBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, *StringLength * sizeof(WCHAR));
 
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                *StringLength = UnicodeStringToAnsiString(lpLinkNameBuffer, LinkName, *StringLength);
-
-                if (!*StringLength)
+                if (lpLinkNameBuffer)
                 {
+                    hResult = g_pFindFirstFileNameTransactedW(lpObjectPathBuffer, dwFlags, StringLength, lpLinkNameBuffer, hTransaction);
+
                     Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-                    hResult = INVALID_HANDLE_VALUE;
+                    *StringLength = UnicodeStringToAnsiString(lpLinkNameBuffer, LinkName, *StringLength);
+
+                    if (!*StringLength)
+                    {
+                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                        hResult = INVALID_HANDLE_VALUE;
+                    }
+                    RtlFreeHeap(g_hProcessHeap, 0, lpLinkNameBuffer);
                 }
-                RtlFreeHeap(g_hProcessHeap, 0, lpLinkNameBuffer);
+                else
+                {
+                    hResult = g_pFindFirstFileNameTransactedA(lpFileName, dwFlags, StringLength, LinkName, hTransaction);
+
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+                }
             }
             else
             {
-                hResult = g_pFindFirstFileNameTransactedA(lpFileName, dwFlags, StringLength, LinkName, hTransaction);
+                hResult = g_pFindFirstFileNameTransactedW(lpObjectPathBuffer, dwFlags, StringLength, (PWSTR) LinkName, hTransaction);
 
                 Win32ErrorCode = g_pRtlGetLastWin32Error();
             }
@@ -4102,14 +4151,10 @@ HANDLE WINAPI NTFSLPS_FindFirstFileNameTransactedA(IN LPCSTR lpFileName, IN DWOR
 
             g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else goto CallFindFirstFileNameTransactedA;
+        else hResult = g_pFindFirstFileNameTransactedA(lpFileName, dwFlags, StringLength, LinkName, hTransaction);
     }
-    else
-    {
-        CallFindFirstFileNameTransactedA:
+    else hResult = NTFSLPS_FindFirstFileNameA(lpFileName, dwFlags, StringLength, LinkName);
 
-        hResult = g_pFindFirstFileNameTransactedA(lpFileName, dwFlags, StringLength, LinkName, hTransaction);
-    }
     return hResult;
 }
 
@@ -4123,19 +4168,23 @@ HANDLE WINAPI NTFSLPS_FindFirstFileNameTransactedW(IN LPCWSTR lpFileName, IN DWO
     DWORD Win32ErrorCode;
     HANDLE hResult;
 
-    lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        hResult = g_pFindFirstFileNameTransactedW(lpObjectPathBuffer, dwFlags, StringLength, LinkName, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            hResult = g_pFindFirstFileNameTransactedW(lpObjectPathBuffer, dwFlags, StringLength, LinkName, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else hResult = g_pFindFirstFileNameTransactedW(lpFileName, dwFlags, StringLength, LinkName, hTransaction);
     }
-    else hResult = g_pFindFirstFileNameTransactedW(lpFileName, dwFlags, StringLength, LinkName, hTransaction);
+    else hResult = NTFSLPS_FindFirstFileNameW(lpFileName, dwFlags, StringLength, LinkName);
 
     return hResult;
 }
@@ -4178,33 +4227,37 @@ HANDLE WINAPI NTFSLPS_FindFirstFileTransactedA(IN LPCSTR lpFileName, IN FINDEX_I
     DWORD Win32ErrorCode;
     HANDLE hResult;
 
-    lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        hResult = g_pFindFirstFileTransactedW(lpObjectPathBuffer, fInfoLevelId, &FindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-        if (hResult != INVALID_HANDLE_VALUE)
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
         {
-            if (UnicodeStringToAnsiString((LPCWSTR) &FindFileData.cFileName, lpFindFileData->cFileName, sizeof(lpFindFileData->cFileName)) &&
-                UnicodeStringToAnsiString((LPCWSTR) &FindFileData.cAlternateFileName, lpFindFileData->cAlternateFileName, sizeof(lpFindFileData->cAlternateFileName)))
-                memcpy(lpFindFileData, &FindFileData, offsetof(WIN32_FIND_DATAW, cFileName));
-            else
+            hResult = g_pFindFirstFileTransactedW(lpObjectPathBuffer, fInfoLevelId, &FindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags, hTransaction);
+
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+            if (hResult != INVALID_HANDLE_VALUE)
             {
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
+                if (UnicodeStringToAnsiString((LPCWSTR) &FindFileData.cFileName, lpFindFileData->cFileName, sizeof(lpFindFileData->cFileName)) &&
+                    UnicodeStringToAnsiString((LPCWSTR) &FindFileData.cAlternateFileName, lpFindFileData->cAlternateFileName, sizeof(lpFindFileData->cAlternateFileName)))
+                    memcpy(lpFindFileData, &FindFileData, offsetof(WIN32_FIND_DATAW, cFileName));
+                else
+                {
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-                RtlZeroMemory(lpFindFileData, sizeof(WIN32_FIND_DATAW));
+                    RtlZeroMemory(lpFindFileData, sizeof(WIN32_FIND_DATAW));
 
-                hResult = INVALID_HANDLE_VALUE;
+                    hResult = INVALID_HANDLE_VALUE;
+                }
             }
-        }
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else hResult = g_pFindFirstFileTransactedA(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags, hTransaction);
     }
-    else hResult = g_pFindFirstFileTransactedA(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags, hTransaction);
+    else hResult = NTFSLPS_FindFirstFileExA(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
 
     return hResult;
 }
@@ -4219,19 +4272,23 @@ HANDLE WINAPI NTFSLPS_FindFirstFileTransactedW(IN LPCWSTR lpFileName, IN FINDEX_
     DWORD Win32ErrorCode;
     HANDLE hResult;
 
-    lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        hResult = g_pFindFirstFileTransactedW(lpObjectPathBuffer, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            hResult = g_pFindFirstFileTransactedW(lpObjectPathBuffer, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else hResult = g_pFindFirstFileTransactedW(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags, hTransaction);
     }
-    else hResult = g_pFindFirstFileTransactedW(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags, hTransaction);
+    else hResult = NTFSLPS_FindFirstFileExW(lpFileName, fInfoLevelId, lpFindFileData, fSearchOp, lpSearchFilter, dwAdditionalFlags);
 
     return hResult;
 }
@@ -4315,32 +4372,36 @@ HANDLE WINAPI NTFSLPS_FindFirstStreamTransactedA(IN LPCSTR lpFileName, IN STREAM
     DWORD Win32ErrorCode;
     HANDLE hResult;
 
-    lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        hResult = g_pFindFirstStreamTransactedW(lpObjectPathBuffer, InfoLevel, &FindStreamData, dwFlags, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-        if (hResult != INVALID_HANDLE_VALUE)
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
         {
-            if (UnicodeStringToAnsiString((LPCWSTR) &FindStreamData.cStreamName, lpFindStreamData->cStreamName, sizeof(lpFindStreamData->cStreamName)))
-                memcpy(lpFindStreamData, &FindStreamData, offsetof(WIN32_FIND_STREAM_DATAW, cStreamName));
-            else
+            hResult = g_pFindFirstStreamTransactedW(lpObjectPathBuffer, InfoLevel, &FindStreamData, dwFlags, hTransaction);
+
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+            if (hResult != INVALID_HANDLE_VALUE)
             {
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
+                if (UnicodeStringToAnsiString((LPCWSTR) &FindStreamData.cStreamName, lpFindStreamData->cStreamName, sizeof(lpFindStreamData->cStreamName)))
+                    memcpy(lpFindStreamData, &FindStreamData, offsetof(WIN32_FIND_STREAM_DATAW, cStreamName));
+                else
+                {
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-                RtlZeroMemory(lpFindStreamData, sizeof(WIN32_FIND_STREAM_DATAA));
+                    RtlZeroMemory(lpFindStreamData, sizeof(WIN32_FIND_STREAM_DATAA));
 
-                hResult = INVALID_HANDLE_VALUE;
+                    hResult = INVALID_HANDLE_VALUE;
+                }
             }
-        }
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else hResult = g_pFindFirstStreamTransactedA(lpFileName, InfoLevel, lpFindStreamData, dwFlags, hTransaction);
     }
-    else hResult = g_pFindFirstStreamTransactedA(lpFileName, InfoLevel, lpFindStreamData, dwFlags, hTransaction);
+    else hResult = NTFSLPS_FindFirstStreamA(lpFileName, InfoLevel, lpFindStreamData, dwFlags);
 
     return hResult;
 }
@@ -4355,19 +4416,23 @@ HANDLE WINAPI NTFSLPS_FindFirstStreamTransactedW(IN LPCWSTR lpFileName, IN STREA
     DWORD Win32ErrorCode;
     HANDLE hResult;
 
-    lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        hResult = g_pFindFirstStreamTransactedW(lpObjectPathBuffer, InfoLevel, lpFindStreamData, dwFlags, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            hResult = g_pFindFirstStreamTransactedW(lpObjectPathBuffer, InfoLevel, lpFindStreamData, dwFlags, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else hResult = g_pFindFirstStreamTransactedW(lpFileName, InfoLevel, lpFindStreamData, dwFlags, hTransaction);
     }
-    else hResult = g_pFindFirstStreamTransactedW(lpFileName, InfoLevel, lpFindStreamData, dwFlags, hTransaction);
+    else hResult = NTFSLPS_FindFirstStreamW(lpFileName, InfoLevel, lpFindStreamData, dwFlags);
 
     return hResult;
 }
@@ -4462,11 +4527,11 @@ BOOL WINAPI NTFSLPS_FindNextFileNameA(IN HANDLE hFindStream, OUT LPDWORD StringL
 
             g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else goto CallFindNextFileNameA;
+        else goto call_FindNextFileNameA;
     }
     else
     {
-        CallFindNextFileNameA:
+        call_FindNextFileNameA:
 
         bResult = g_pFindNextFileNameA(hFindStream, StringLength, LinkName);
     }
@@ -4564,19 +4629,23 @@ DWORD WINAPI NTFSLPS_GetCompressedFileSizeTransactedA(IN LPCSTR lpFileName, IN L
     DWORD Win32ErrorCode;
     DWORD dwResult;
 
-    lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        dwResult = g_pGetCompressedFileSizeTransactedW(lpObjectPathBuffer, lpFileSizeHigh, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            dwResult = g_pGetCompressedFileSizeTransactedW(lpObjectPathBuffer, lpFileSizeHigh, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else dwResult = g_pGetCompressedFileSizeTransactedA(lpFileName, lpFileSizeHigh, hTransaction);
     }
-    else dwResult = g_pGetCompressedFileSizeTransactedA(lpFileName, lpFileSizeHigh, hTransaction);
+    else dwResult = NTFSLPS_GetCompressedFileSizeA(lpFileName, lpFileSizeHigh);
 
     return dwResult;
 }
@@ -4591,19 +4660,23 @@ DWORD WINAPI NTFSLPS_GetCompressedFileSizeTransactedW(IN LPCWSTR lpFileName, IN 
     DWORD Win32ErrorCode;
     DWORD dwResult;
 
-    lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        dwResult = g_pGetCompressedFileSizeTransactedW(lpObjectPathBuffer, lpFileSizeHigh, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            dwResult = g_pGetCompressedFileSizeTransactedW(lpObjectPathBuffer, lpFileSizeHigh, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else dwResult = g_pGetCompressedFileSizeTransactedW(lpFileName, lpFileSizeHigh, hTransaction);
     }
-    else dwResult = g_pGetCompressedFileSizeTransactedW(lpFileName, lpFileSizeHigh, hTransaction);
+    else dwResult = NTFSLPS_GetCompressedFileSizeW(lpFileName, lpFileSizeHigh);
 
     return dwResult;
 }
@@ -4744,19 +4817,23 @@ BOOL WINAPI NTFSLPS_GetFileAttributesTransactedA(IN LPCSTR lpFileName, IN GET_FI
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        bResult = g_pGetFileAttributesTransactedW(lpObjectPathBuffer, fInfoLevelId, lpFileInformation, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            bResult = g_pGetFileAttributesTransactedW(lpObjectPathBuffer, fInfoLevelId, lpFileInformation, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else bResult = g_pGetFileAttributesTransactedA(lpFileName, fInfoLevelId, lpFileInformation, hTransaction);
     }
-    else bResult = g_pGetFileAttributesTransactedA(lpFileName, fInfoLevelId, lpFileInformation, hTransaction);
+    else bResult = NTFSLPS_GetFileAttributesExA(lpFileName, fInfoLevelId, lpFileInformation);
 
     return bResult;
 }
@@ -4771,19 +4848,23 @@ BOOL WINAPI NTFSLPS_GetFileAttributesTransactedW(IN LPCWSTR lpFileName, IN GET_F
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        bResult = g_pGetFileAttributesTransactedW(lpObjectPathBuffer, fInfoLevelId, lpFileInformation, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            bResult = g_pGetFileAttributesTransactedW(lpObjectPathBuffer, fInfoLevelId, lpFileInformation, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else bResult = g_pGetFileAttributesTransactedW(lpFileName, fInfoLevelId, lpFileInformation, hTransaction);
     }
-    else bResult = g_pGetFileAttributesTransactedW(lpFileName, fInfoLevelId, lpFileInformation, hTransaction);
+    else bResult = NTFSLPS_GetFileAttributesExW(lpFileName, fInfoLevelId, lpFileInformation);
 
     return bResult;
 }
@@ -4861,7 +4942,7 @@ DWORD WINAPI NTFSLPS_GetFileSystemObjectAttributesW(IN LPCWSTR lpObjectPath)
     BY_HANDLE_FILE_INFORMATION ObjectInformation;
     DWORD Win32ErrorCode;
 
-    hObject = NTFSLPS_CreateFileW(lpObjectPath, FILE_READ_ATTRIBUTES | FILE_READ_EA, FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    hObject = NTFSLPS_CreateFileW(lpObjectPath, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
 
     if (hObject == INVALID_HANDLE_VALUE)
     {
@@ -5667,44 +5748,48 @@ DWORD WINAPI NTFSLPS_GetFullPathNameTransactedA(IN LPCSTR lpFileName, IN DWORD n
     DWORD Win32ErrorCode = NO_ERROR;
     DWORD dwResult = 0;
 
-    lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, nBufferLength * sizeof(WCHAR));
+        lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
 
-        if (lpTemporaryBuffer)
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
         {
-            dwResult = g_pGetFullPathNameTransactedW(lpObjectPathBuffer, nBufferLength, lpTemporaryBuffer, &lpTemporaryFilePart, hTransaction);
+            lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, nBufferLength * sizeof(WCHAR));
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-            if (dwResult && dwResult < nBufferLength)
+            if (lpTemporaryBuffer)
             {
-                if (UnicodePathStringToAnsiPathString((LPCWSTR) lpTemporaryBuffer, lpBuffer, nBufferLength))
-                {
-                    *lpFilePart = (lpTemporaryFilePart - lpTemporaryBuffer) / sizeof(WCHAR) + lpBuffer;
-                }
-                else
-                {
-                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+                dwResult = g_pGetFullPathNameTransactedW(lpObjectPathBuffer, nBufferLength, lpTemporaryBuffer, &lpTemporaryFilePart, hTransaction);
 
-                    dwResult = 0;
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                if (dwResult && dwResult < nBufferLength)
+                {
+                    if (UnicodePathStringToAnsiPathString((LPCWSTR) lpTemporaryBuffer, lpBuffer, nBufferLength))
+                    {
+                        *lpFilePart = (lpTemporaryFilePart - lpTemporaryBuffer) / sizeof(WCHAR) + lpBuffer;
+                    }
+                    else
+                    {
+                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                        dwResult = 0;
+                    }
                 }
+                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
             }
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-        }
-        else
-        {
-            dwResult = g_pGetFullPathNameTransactedA(lpFileName, nBufferLength, lpBuffer, lpFilePart, hTransaction);
+            else
+            {
+                dwResult = g_pGetFullPathNameTransactedA(lpFileName, nBufferLength, lpBuffer, lpFilePart, hTransaction);
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-        }
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else dwResult = g_pGetFullPathNameTransactedA(lpFileName, nBufferLength, lpBuffer, lpFilePart, hTransaction);
     }
-    else dwResult = g_pGetFullPathNameTransactedA(lpFileName, nBufferLength, lpBuffer, lpFilePart, hTransaction);
+    else dwResult = NTFSLPS_GetFullPathNameA(lpFileName, nBufferLength, lpBuffer, lpFilePart);
 
     return dwResult;
 }
@@ -5719,19 +5804,23 @@ DWORD WINAPI NTFSLPS_GetFullPathNameTransactedW(IN LPCWSTR lpFileName, IN DWORD 
     DWORD Win32ErrorCode;
     DWORD dwResult;
 
-    lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        dwResult = g_pGetFullPathNameTransactedW(lpObjectPathBuffer, nBufferLength, lpBuffer, lpFilePart, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            dwResult = g_pGetFullPathNameTransactedW(lpObjectPathBuffer, nBufferLength, lpBuffer, lpFilePart, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else dwResult = g_pGetFullPathNameTransactedW(lpFileName, nBufferLength, lpBuffer, lpFilePart, hTransaction);
     }
-    else dwResult = g_pGetFullPathNameTransactedW(lpFileName, nBufferLength, lpBuffer, lpFilePart, hTransaction);
+    else dwResult = NTFSLPS_GetFullPathNameW(lpFileName, nBufferLength, lpBuffer, lpFilePart);
 
     return dwResult;
 }
@@ -6043,36 +6132,40 @@ DWORD WINAPI NTFSLPS_GetLongPathNameTransactedA(IN LPCSTR lpszShortPath, OUT LPS
     DWORD Win32ErrorCode = NO_ERROR;
     DWORD dwResult = 0;
 
-    lpObjectPathBuffer = GetFullObjectPathA(lpszShortPath);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpTemporaryLongPathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cchBuffer * sizeof(WCHAR));
+        lpObjectPathBuffer = GetFullObjectPathA(lpszShortPath);
 
-        if (lpTemporaryLongPathBuffer)
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
         {
-            dwResult = g_pGetLongPathNameTransactedW(lpObjectPathBuffer, lpTemporaryLongPathBuffer, cchBuffer, hTransaction);
+            lpTemporaryLongPathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cchBuffer * sizeof(WCHAR));
 
-            if (dwResult && dwResult < cchBuffer)
+            if (lpTemporaryLongPathBuffer)
             {
-                if (!UnicodeStringToAnsiString((LPCWSTR) lpTemporaryLongPathBuffer, lpszLongPath, cchBuffer))
-                {
-                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+                dwResult = g_pGetLongPathNameTransactedW(lpObjectPathBuffer, lpTemporaryLongPathBuffer, cchBuffer, hTransaction);
 
-                    dwResult = 0;
+                if (dwResult && dwResult < cchBuffer)
+                {
+                    if (!UnicodeStringToAnsiString((LPCWSTR) lpTemporaryLongPathBuffer, lpszLongPath, cchBuffer))
+                    {
+                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                        dwResult = 0;
+                    }
                 }
+                else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryLongPathBuffer);
             }
             else Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryLongPathBuffer);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+        else dwResult = g_pGetLongPathNameTransactedA(lpszShortPath, lpszLongPath, cchBuffer, hTransaction);
     }
-    else dwResult = g_pGetLongPathNameTransactedA(lpszShortPath, lpszLongPath, cchBuffer, hTransaction);
+    else dwResult = NTFSLPS_GetLongPathNameA(lpszShortPath, lpszLongPath, cchBuffer);
 
     return dwResult;
 }
@@ -6087,19 +6180,23 @@ DWORD WINAPI NTFSLPS_GetLongPathNameTransactedW(IN LPCWSTR lpszShortPath, OUT LP
     DWORD Win32ErrorCode;
     DWORD dwResult;
 
-    lpObjectPathBuffer = GetFullObjectPathW(lpszShortPath);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        dwResult = g_pGetLongPathNameTransactedW(lpObjectPathBuffer, lpszLongPath, cchBuffer, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathW(lpszShortPath);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            dwResult = g_pGetLongPathNameTransactedW(lpObjectPathBuffer, lpszLongPath, cchBuffer, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else dwResult = g_pGetLongPathNameTransactedW(lpszShortPath, lpszLongPath, cchBuffer, hTransaction);
     }
-    else dwResult = g_pGetLongPathNameTransactedW(lpszShortPath, lpszLongPath, cchBuffer, hTransaction);
+    else dwResult = NTFSLPS_GetLongPathNameW(lpszShortPath, lpszLongPath, cchBuffer);
 
     return dwResult;
 }
@@ -6379,31 +6476,35 @@ BOOL WINAPI NTFSLPS_MoveFileTransactedA(IN LPCSTR lpExistingFileName, IN LPCSTR 
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpExistingFilePathBuffer = GetFullObjectPathA(lpExistingFileName);
-
-    if (lpExistingFilePathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpNewFilePathBuffer = GetFullObjectPathA(lpNewFileName);
+        lpExistingFilePathBuffer = GetFullObjectPathA(lpExistingFileName);
 
-        if (lpNewFilePathBuffer || !g_pRtlGetLastWin32Error())
+        if (lpExistingFilePathBuffer || !g_pRtlGetLastWin32Error())
         {
-            bResult = g_pMoveFileTransactedW(lpExistingFilePathBuffer, lpNewFilePathBuffer, lpProgressRoutine, lpData, dwFlags, hTransaction);
+            lpNewFilePathBuffer = GetFullObjectPathA(lpNewFileName);
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (lpNewFilePathBuffer || !g_pRtlGetLastWin32Error())
+            {
+                bResult = g_pMoveFileTransactedW(lpExistingFilePathBuffer, lpNewFilePathBuffer, lpProgressRoutine, lpData, dwFlags, hTransaction);
 
-            FreeFullObjectPathBuffer(lpNewFilePathBuffer);
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                FreeFullObjectPathBuffer(lpNewFilePathBuffer);
+            }
+            else
+            {
+                bResult = g_pMoveFileTransactedA(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, dwFlags, hTransaction);
+
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else
-        {
-            bResult = g_pMoveFileTransactedA(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, dwFlags, hTransaction);
-
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-        }
-        FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+        else bResult = g_pMoveFileTransactedA(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, dwFlags, hTransaction);
     }
-    else bResult = g_pMoveFileTransactedA(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, dwFlags, hTransaction);
+    else bResult = NTFSLPS_MoveFileWithProgressA(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, dwFlags);
 
     return bResult;
 }
@@ -6419,31 +6520,35 @@ BOOL WINAPI NTFSLPS_MoveFileTransactedW(IN LPCWSTR lpExistingFileName, IN LPCWST
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpExistingFilePathBuffer = GetFullObjectPathW(lpExistingFileName);
-
-    if (lpExistingFilePathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        lpNewFilePathBuffer = GetFullObjectPathW(lpNewFileName);
+        lpExistingFilePathBuffer = GetFullObjectPathW(lpExistingFileName);
 
-        if (lpNewFilePathBuffer || !g_pRtlGetLastWin32Error())
+        if (lpExistingFilePathBuffer || !g_pRtlGetLastWin32Error())
         {
-            bResult = g_pMoveFileTransactedW(lpExistingFilePathBuffer, lpNewFilePathBuffer, lpProgressRoutine, lpData, dwFlags, hTransaction);
+            lpNewFilePathBuffer = GetFullObjectPathW(lpNewFileName);
 
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
+            if (lpNewFilePathBuffer || !g_pRtlGetLastWin32Error())
+            {
+                bResult = g_pMoveFileTransactedW(lpExistingFilePathBuffer, lpNewFilePathBuffer, lpProgressRoutine, lpData, dwFlags, hTransaction);
 
-            FreeFullObjectPathBuffer(lpNewFilePathBuffer);
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                FreeFullObjectPathBuffer(lpNewFilePathBuffer);
+            }
+            else
+            {
+                bResult = g_pMoveFileTransactedW(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, dwFlags, hTransaction);
+
+                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            }
+            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
         }
-        else
-        {
-            bResult = g_pMoveFileTransactedW(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, dwFlags, hTransaction);
-
-            Win32ErrorCode = g_pRtlGetLastWin32Error();
-        }
-        FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+        else bResult = g_pMoveFileTransactedW(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, dwFlags, hTransaction);
     }
-    else bResult = g_pMoveFileTransactedW(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, dwFlags, hTransaction);
+    else bResult = NTFSLPS_MoveFileWithProgressW(lpExistingFileName, lpNewFileName, lpProgressRoutine, lpData, dwFlags);
 
     return bResult;
 }
@@ -6995,19 +7100,23 @@ BOOL WINAPI NTFSLPS_RemoveDirectoryTransactedA(IN LPCSTR lpPathName, IN HANDLE h
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpObjectPathBuffer = GetFullObjectPathA(lpPathName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        bResult = g_pRemoveDirectoryTransactedW(lpObjectPathBuffer, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathA(lpPathName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            bResult = g_pRemoveDirectoryTransactedW(lpObjectPathBuffer, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else bResult = g_pRemoveDirectoryTransactedA(lpPathName, hTransaction);
     }
-    else bResult = g_pRemoveDirectoryTransactedA(lpPathName, hTransaction);
+    else bResult = NTFSLPS_RemoveDirectoryA(lpPathName);
 
     return bResult;
 }
@@ -7022,19 +7131,23 @@ BOOL WINAPI NTFSLPS_RemoveDirectoryTransactedW(IN LPCWSTR lpPathName, IN HANDLE 
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpObjectPathBuffer = GetFullObjectPathW(lpPathName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        bResult = g_pRemoveDirectoryTransactedW(lpObjectPathBuffer, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathW(lpPathName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            bResult = g_pRemoveDirectoryTransactedW(lpObjectPathBuffer, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else bResult = g_pRemoveDirectoryTransactedW(lpPathName, hTransaction);
     }
-    else bResult = g_pRemoveDirectoryTransactedW(lpPathName, hTransaction);
+    else bResult = NTFSLPS_RemoveDirectoryW(lpPathName);
 
     return bResult;
 }
@@ -7376,19 +7489,23 @@ BOOL WINAPI NTFSLPS_SetFileAttributesTransactedA(IN LPCSTR lpFileName, IN DWORD 
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        bResult = g_pSetFileAttributesTransactedW(lpObjectPathBuffer, dwFileAttributes, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathA(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            bResult = g_pSetFileAttributesTransactedW(lpObjectPathBuffer, dwFileAttributes, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else bResult = g_pSetFileAttributesTransactedA(lpFileName, dwFileAttributes, hTransaction);
     }
-    else bResult = g_pSetFileAttributesTransactedA(lpFileName, dwFileAttributes, hTransaction);
+    else bResult = NTFSLPS_SetFileAttributesA(lpFileName, dwFileAttributes);
 
     return bResult;
 }
@@ -7403,19 +7520,23 @@ BOOL WINAPI NTFSLPS_SetFileAttributesTransactedW(IN LPCWSTR lpFileName, IN DWORD
     DWORD Win32ErrorCode;
     BOOL bResult;
 
-    lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
-
-    if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+    if (hTransaction)
     {
-        bResult = g_pSetFileAttributesTransactedW(lpObjectPathBuffer, dwFileAttributes, hTransaction);
+        lpObjectPathBuffer = GetFullObjectPathW(lpFileName);
 
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
+        if (lpObjectPathBuffer || !g_pRtlGetLastWin32Error())
+        {
+            bResult = g_pSetFileAttributesTransactedW(lpObjectPathBuffer, dwFileAttributes, hTransaction);
 
-        FreeFullObjectPathBuffer(lpObjectPathBuffer);
+            Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
+            FreeFullObjectPathBuffer(lpObjectPathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else bResult = g_pSetFileAttributesTransactedW(lpFileName, dwFileAttributes, hTransaction);
     }
-    else bResult = g_pSetFileAttributesTransactedW(lpFileName, dwFileAttributes, hTransaction);
+    else bResult = NTFSLPS_SetFileAttributesW(lpFileName, dwFileAttributes);
 
     return bResult;
 }
