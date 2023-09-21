@@ -18,6 +18,8 @@
 
 HANDLE g_hProcessHeap;
 
+HMODULE g_hModulePSAPI;
+
 pRtlAnsiStringToUnicodeString g_pRtlAnsiStringToUnicodeString;
 pRtlGetLastWin32Error g_pRtlGetLastWin32Error;
 pRtlNtStatusToDosError g_pRtlNtStatusToDosError;
@@ -60,12 +62,17 @@ pGetCompressedFileSizeTransactedA g_pGetCompressedFileSizeTransactedA;
 pGetCompressedFileSizeTransactedW g_pGetCompressedFileSizeTransactedW;
 pGetFileAttributesTransactedA g_pGetFileAttributesTransactedA;
 pGetFileAttributesTransactedW g_pGetFileAttributesTransactedW;
+pGetFileSizeEx g_pGetFileSizeEx;
 pGetFinalPathNameByHandleA g_pGetFinalPathNameByHandleA;
 pGetFinalPathNameByHandleW g_pGetFinalPathNameByHandleW;
 pGetFullPathNameTransactedA g_pGetFullPathNameTransactedA;
 pGetFullPathNameTransactedW g_pGetFullPathNameTransactedW;
 pGetLongPathNameTransactedA g_pGetLongPathNameTransactedA;
 pGetLongPathNameTransactedW g_pGetLongPathNameTransactedW;
+pGetMappedFileNameA g_pGetMappedFileNameA;
+pGetMappedFileNameW g_pGetMappedFileNameW;
+pGetModuleFileNameExA g_pGetModuleFileNameExA;
+pGetModuleFileNameExW g_pGetModuleFileNameExW;
 pMoveFileTransactedA g_pMoveFileTransactedA;
 pMoveFileTransactedW g_pMoveFileTransactedW;
 pMoveFileWithProgressA g_pMoveFileWithProgressA;
@@ -92,6 +99,63 @@ const WCHAR wcszBackupFileExtension[] = L".bak";
 /* +====================+ */
 /* | INTERNAL FUNCTIONS | */
 /* +====================+ */
+
+// LoadSystemLibrary
+// -----------------
+// Implemented: 100%
+
+HMODULE WINAPI LoadSystemLibrary(LPCTSTR lpLibFileName)
+{
+    HMODULE hModule = NULL;
+
+    if (lpLibFileName && lpLibFileName[0])
+    {
+        LPTSTR lpLibPathBuffer;
+
+        UINT cchBuffer = GetSystemDirectory((LPTSTR) &lpLibPathBuffer, 0);
+
+        if (cchBuffer)
+        {
+            UINT cchLibFilePath = lstrlen(lpLibFileName);
+
+            cchBuffer += cchLibFilePath + 1;
+
+            lpLibPathBuffer = RtlAllocateHeap(g_hProcessHeap, 0, cchBuffer * sizeof(TCHAR));
+
+            if (lpLibPathBuffer)
+            {
+                DWORD Win32ErrorCode;
+
+                UINT cchTemporary = GetSystemDirectory(lpLibPathBuffer, cchBuffer);
+
+                if (cchTemporary + cchLibFilePath + 2 == cchBuffer)
+                {
+                    *(lpLibPathBuffer + cchTemporary) = (TCHAR) '\\';
+
+                    memcpy(lpLibPathBuffer + cchTemporary + 1, lpLibFileName, (cchBuffer - cchTemporary - 2) * sizeof(TCHAR));
+
+                    *(lpLibPathBuffer + cchTemporary + cchLibFilePath + 1) = (TCHAR) 0;
+
+                    hModule = LoadLibrary(lpLibPathBuffer);
+
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+                }
+                else
+                {
+                    if (!cchTemporary)
+                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+                    else Win32ErrorCode = ERROR_INTERNAL_ERROR;
+                }
+                RtlFreeHeap(g_hProcessHeap, 0, lpLibPathBuffer);
+
+                g_pRtlSetLastWin32Error(Win32ErrorCode);
+            }
+        }
+    }
+    else g_pRtlSetLastWin32Error(ERROR_MOD_NOT_FOUND);
+
+    return hModule;
+}
 
 // alternateRtlNtStatusToDosError
 // ------------------------------
@@ -429,25 +493,24 @@ UINT WINAPI UnicodeStringToAnsiString(IN LPCWSTR lpUnicodeString, OUT LPSTR lpAn
 DWORD WINAPI GetFullPathAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD nBufferLength)
 {
     SIZE_T ObjectPathLength;
-    pCurrentCodePageStringToUnicodeString p_CurrentCodePageStringToUnicodeString;
     ANSI_STRING AnsiString;
     UNICODE_STRING UnicodeString;
     DWORD dwFilePathLength;
     LPWSTR lpTemporaryBuffer;
     NTSTATUS Status;
+    DWORD Win32ErrorCode;
 
-    if (!lpObjectPath || lpObjectPath[0] == (CHAR) 0)
+    if (!lpObjectPath || lpObjectPath[0] == 0)
     {
-        g_pRtlSetLastWin32Error(ERROR_INVALID_NAME);
+        dwFilePathLength = GetCurrentDirectoryW(nBufferLength, lpBuffer);
 
-        return 0;
-    }
-
-    if (!lpBuffer && nBufferLength)
-    {
-        g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
-
-        return 0;
+        if (dwFilePathLength)
+        {
+            if (dwFilePathLength < nBufferLength)
+                g_pRtlSetLastWin32Error(NO_ERROR);
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+        }
+        return dwFilePathLength;
     }
 
     ObjectPathLength = strlen(lpObjectPath);
@@ -459,333 +522,426 @@ DWORD WINAPI GetFullPathAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD
         return 0;
     }
 
-    if (AreFileApisANSI())
-        p_CurrentCodePageStringToUnicodeString = (pCurrentCodePageStringToUnicodeString) g_pRtlAnsiStringToUnicodeString;
-    else p_CurrentCodePageStringToUnicodeString = (pCurrentCodePageStringToUnicodeString) g_pRtlOemStringToUnicodeString;
-
-    if (!strncmp(lpObjectPath, "\\\\?\\UNC\\", 8))
+    if (lpObjectPath[0] == '\\' && lpObjectPath[1] == '\\')
     {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 6 + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength - 7;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength - 7 + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath + 7;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 6 + 1) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer + 1;
-
-        Status = p_CurrentCodePageStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
+        if (lpObjectPath[2] == '?' && lpObjectPath[3] == '\\')
         {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+            if ((lpObjectPath[4] == 'U' || lpObjectPath[4] == 'u') &&
+                (lpObjectPath[5] == 'N' || lpObjectPath[5] == 'n') &&
+                (lpObjectPath[6] == 'C' || lpObjectPath[6] == 'c') &&
+                 lpObjectPath[7] == '\\')
+            {
+                lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 6 + 1) * sizeof(WCHAR));
 
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
+                if (lpTemporaryBuffer)
+                {
+                    AnsiString.Length = (USHORT) ObjectPathLength - 7;
+                    AnsiString.MaximumLength = (USHORT) ObjectPathLength - 7 + 1;
+                    AnsiString.Buffer = (LPSTR) lpObjectPath + 7;
 
-            return 0;
+                    UnicodeString.Length = 0;
+                    UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 6 + 1) * sizeof(WCHAR);
+                    UnicodeString.Buffer = lpTemporaryBuffer + 1;
+
+                    if (AreFileApisANSI())
+                        Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                    else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+
+                    if (!Status)
+                    {
+                        lpTemporaryBuffer[0] = '\\';
+
+                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
+
+                        if (dwFilePathLength)
+                        {
+                            dwFilePathLength += 6;
+
+                            if (dwFilePathLength > MAX_PATH16)
+                            {
+                                if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                                {
+                                    Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                    dwFilePathLength = 0;
+                                }
+                                else if (dwFilePathLength <= nBufferLength)
+                                {
+                                    if (lpBuffer)
+                                    {
+                                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL);
+
+                                        if (dwFilePathLength)
+                                        {
+                                            dwFilePathLength += 6;
+
+                                            if (dwFilePathLength < nBufferLength)
+                                            {
+                                                memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
+
+                                                Win32ErrorCode = NO_ERROR;
+                                            }
+                                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                        }
+                                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                    }
+                                    else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                }
+                                else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                            }
+                            else
+                            {
+                                if (lpBuffer)
+                                {
+                                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                        }
+                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                    }
+                    else
+                    {
+                        Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                        dwFilePathLength = 0;
+                    }
+                    RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+
+                    g_pRtlSetLastWin32Error(Win32ErrorCode);
+                }
+                else dwFilePathLength = 0;
+            }
+            else
+            {
+                if ((ObjectPathLength == 6) &&
+                   ((lpObjectPath[4] >= 'A' && lpObjectPath[4] <= 'Z') ||
+                    (lpObjectPath[4] >= 'a' && lpObjectPath[4] <= 'z')) &&
+                     lpObjectPath[5] == ':' && lpObjectPath[6] == 0)
+                {
+                    dwFilePathLength = 3;
+
+                    if (dwFilePathLength <= nBufferLength)
+                    {
+                        if (lpBuffer)
+                        {
+                            lpBuffer[0] = lpObjectPath[4] & (0xFF ^ ' ');
+                            lpBuffer[1] = ':';
+                            lpBuffer[2] = 0;
+
+                            dwFilePathLength--;
+
+                            g_pRtlSetLastWin32Error(NO_ERROR);
+                        }
+                        else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+                    }
+                    else goto loc_SetInsufficientBufferErrorCode;
+                }
+                else
+                {
+                    lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 2 + 1) * sizeof(WCHAR));
+
+                    if (lpTemporaryBuffer)
+                    {
+                        AnsiString.Length = (USHORT) ObjectPathLength - 2;
+                        AnsiString.MaximumLength = (USHORT) ObjectPathLength - 2 + 1;
+                        AnsiString.Buffer = (LPSTR) lpObjectPath;
+
+                        UnicodeString.Length = 0;
+                        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 2) * sizeof(WCHAR);
+                        UnicodeString.Buffer = lpTemporaryBuffer + 1;
+
+                        if (AreFileApisANSI())
+                            Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                        else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+
+                        if (!Status)
+                        {
+                            lpTemporaryBuffer[0] = '\\';
+
+                            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
+
+                            if (dwFilePathLength)
+                            {
+                                dwFilePathLength += 2;
+
+                                if (dwFilePathLength > MAX_PATH16)
+                                {
+                                    if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                                    {
+                                        Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                        dwFilePathLength = 0;
+                                    }
+                                    else if (dwFilePathLength <= nBufferLength)
+                                    {
+                                        if (lpBuffer)
+                                        {
+                                            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 2, lpBuffer + 2, NULL);
+
+                                            if (dwFilePathLength)
+                                            {
+                                                dwFilePathLength += 2;
+
+                                                if (dwFilePathLength < nBufferLength)
+                                                {
+                                                    memcpy(lpBuffer, L"\\\\?", 3 * sizeof(WCHAR));
+
+                                                    Win32ErrorCode = NO_ERROR;
+                                                }
+                                                else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                            }
+                                            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                        }
+                                        else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                    }
+                                    else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                }
+                                else
+                                {
+                                    if (lpBuffer)
+                                    {
+                                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                    }
+                                    else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                }
+                            }
+                            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                        }
+                        else
+                        {
+                            Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                            dwFilePathLength = 0;
+                        }
+                        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+
+                        g_pRtlSetLastWin32Error(Win32ErrorCode);
+                    }
+                    else dwFilePathLength = 0;
+                }
+            }
         }
-
-        lpTemporaryBuffer[0] = (WCHAR) (unsigned int) '\\';
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16)
+        else if (lpObjectPath[2] == '.' && lpObjectPath[3] == '\\')
         {
-            if (dwFilePathLength + 6 >= UNICODE_STRING_MAX_CHARS)
+            dwFilePathLength = ObjectPathLength + 1;
+
+            if (dwFilePathLength <= nBufferLength)
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                if (lpBuffer)
+                {
+                    memcpy(lpBuffer, lpObjectPath, dwFilePathLength);
 
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
+                    dwFilePathLength--;
 
-                return 0;
+                    g_pRtlSetLastWin32Error(NO_ERROR);
+                }
+                else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else if (dwFilePathLength + 6 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 6;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL);
-
-            if (dwFilePathLength)
-            {
-                memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
-
-                dwFilePathLength += 6;
-            }
+            else goto loc_SetInsufficientBufferErrorCode;
         }
         else
         {
-            if (dwFilePathLength > nBufferLength)
+            lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
+
+            if (lpTemporaryBuffer)
             {
+                AnsiString.Length = (USHORT) ObjectPathLength;
+                AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
+                AnsiString.Buffer = (LPSTR) lpObjectPath;
+
+                UnicodeString.Length = 0;
+                UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
+                UnicodeString.Buffer = lpTemporaryBuffer;
+
+                if (AreFileApisANSI())
+                    Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+
+                if (!Status)
+                {
+                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
+
+                    if (dwFilePathLength)
+                    {
+                        if (dwFilePathLength > MAX_PATH16)
+                        {
+                            dwFilePathLength += 6;
+
+                            if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                            {
+                                Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                dwFilePathLength = 0;
+                            }
+                            else if (dwFilePathLength <= nBufferLength)
+                            {
+                                if (lpBuffer)
+                                {
+                                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL);
+
+                                    if (dwFilePathLength)
+                                    {
+                                        dwFilePathLength += 6;
+
+                                        if (dwFilePathLength < nBufferLength)
+                                        {
+                                            memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
+
+                                            Win32ErrorCode = NO_ERROR;
+                                        }
+                                        else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                    }
+                                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                        }
+                        else
+                        {
+                            if (lpBuffer)
+                            {
+                                dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+                            }
+                            else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                        }
+                    }
+                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                }
+                else
+                {
+                    Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                    dwFilePathLength = 0;
+                }
                 RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
+                g_pRtlSetLastWin32Error(Win32ErrorCode);
             }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+            else dwFilePathLength = 0;
         }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-    }
-    else if (!strncmp(lpObjectPath, "\\\\?\\", 4))
-    {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 2 + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength - 2;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength - 2 + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 2) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer + 1;
-
-        Status = p_CurrentCodePageStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
-        {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        lpTemporaryBuffer[0] = (WCHAR) (unsigned int) '\\';
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16)
-        {
-            if (dwFilePathLength + 2 >= UNICODE_STRING_MAX_CHARS)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
-
-                return 0;
-            }
-            else if (dwFilePathLength + 2 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 2;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 2, lpBuffer + 2, NULL);
-
-            if (dwFilePathLength)
-            {
-                memcpy(lpBuffer, L"\\\\?", 3 * sizeof(WCHAR));
-
-                dwFilePathLength += 2;
-            }
-        }
-        else
-        {
-            if (dwFilePathLength > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
-        }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-    }
-    else if (!strncmp(lpObjectPath, "\\\\.\\", 4))
-    {
-        if (ObjectPathLength + 1 >= nBufferLength)
-        {
-            g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-            return ObjectPathLength + 1;
-        }
-
-        AnsiString.Length = (USHORT) ObjectPathLength;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) nBufferLength * sizeof(WCHAR);
-        UnicodeString.Buffer = lpBuffer;
-
-        Status = p_CurrentCodePageStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
-        {
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        dwFilePathLength = UnicodeString.Length / sizeof(WCHAR);
-    }
-    else if (!strncmp(lpObjectPath, "\\\\", 2))
-    {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer;
-
-        Status = p_CurrentCodePageStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
-        {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16)
-        {
-            if (dwFilePathLength + 6 >= UNICODE_STRING_MAX_CHARS)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
-
-                return 0;
-            }
-            else if (dwFilePathLength + 6 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 6;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL);
-
-            if (dwFilePathLength)
-            {
-                memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
-
-                dwFilePathLength += 6;
-            }
-        }
-        else
-        {
-            if (dwFilePathLength > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
-        }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
     }
     else
     {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer;
-
-        Status = p_CurrentCodePageStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
+        if ((ObjectPathLength == 2) &&
+           ((lpObjectPath[0] >= 'A' && lpObjectPath[0] <= 'Z') ||
+            (lpObjectPath[0] >= 'a' && lpObjectPath[0] <= 'z')) &&
+             lpObjectPath[1] == ':' && lpObjectPath[2] == 0)
         {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+            dwFilePathLength = 3;
 
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16)
-        {
-            if (dwFilePathLength + 4 >= UNICODE_STRING_MAX_CHARS)
+            if (dwFilePathLength <= nBufferLength)
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                if (lpBuffer)
+                {
+                    lpBuffer[0] = lpObjectPath[0] & (0xFF ^ ' ');
+                    lpBuffer[1] = ':';
+                    lpBuffer[2] = 0;
 
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
+                    dwFilePathLength--;
 
-                return 0;
+                    g_pRtlSetLastWin32Error(NO_ERROR);
+                }
+                else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else if (dwFilePathLength + 4 > nBufferLength)
+            else
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                loc_SetInsufficientBufferErrorCode:
 
                 g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 4;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 4, lpBuffer + 4, NULL);
-
-            if (dwFilePathLength)
-            {
-                memcpy(lpBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
-
-                dwFilePathLength += 4;
             }
         }
         else
         {
-            if (dwFilePathLength > nBufferLength)
+            lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
+
+            if (lpTemporaryBuffer)
             {
+                AnsiString.Length = (USHORT) ObjectPathLength;
+                AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
+                AnsiString.Buffer = (LPSTR) lpObjectPath;
+
+                UnicodeString.Length = 0;
+                UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
+                UnicodeString.Buffer = lpTemporaryBuffer;
+
+                if (AreFileApisANSI())
+                    Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+
+                if (!Status)
+                {
+                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
+
+                    if (dwFilePathLength)
+                    {
+                        if (dwFilePathLength > MAX_PATH16)
+                        {
+                            dwFilePathLength += 4;
+
+                            if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                            {
+                                Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                dwFilePathLength = 0;
+                            }
+                            else if (dwFilePathLength <= nBufferLength)
+                            {
+                                if (lpBuffer)
+                                {
+                                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 4, lpBuffer + 4, NULL);
+
+                                    if (dwFilePathLength)
+                                    {
+                                        dwFilePathLength += 4;
+
+                                        if (dwFilePathLength < nBufferLength)
+                                        {
+                                            memcpy(lpBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
+
+                                            Win32ErrorCode = NO_ERROR;
+                                        }
+                                        else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                    }
+                                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                        }
+                        else
+                        {
+                            if (lpBuffer)
+                            {
+                                dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+                            }
+                            else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                        }
+                    }
+                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                }
+                else
+                {
+                    Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                    dwFilePathLength = 0;
+                }
                 RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
+                g_pRtlSetLastWin32Error(Win32ErrorCode);
             }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+            else dwFilePathLength = 0;
         }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
     }
-
-    g_pRtlSetLastWin32Error(NO_ERROR);
-
     return dwFilePathLength;
 }
 
@@ -796,25 +952,24 @@ DWORD WINAPI GetFullPathAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD
 DWORD WINAPI GetFullPathExAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD nBufferLength, BOOL bForcedLongPathPrefix)
 {
     SIZE_T ObjectPathLength;
-    pCurrentCodePageStringToUnicodeString p_CurrentCodePageStringToUnicodeString;
     ANSI_STRING AnsiString;
     UNICODE_STRING UnicodeString;
     DWORD dwFilePathLength;
     LPWSTR lpTemporaryBuffer;
     NTSTATUS Status;
+    DWORD Win32ErrorCode;
 
-    if (!lpObjectPath || lpObjectPath[0] == (CHAR) 0)
+    if (!lpObjectPath || lpObjectPath[0] == 0)
     {
-        g_pRtlSetLastWin32Error(ERROR_INVALID_NAME);
+        dwFilePathLength = GetCurrentDirectoryW(nBufferLength, lpBuffer);
 
-        return 0;
-    }
-
-    if (!lpBuffer && nBufferLength)
-    {
-        g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
-
-        return 0;
+        if (dwFilePathLength)
+        {
+            if (dwFilePathLength < nBufferLength)
+                g_pRtlSetLastWin32Error(NO_ERROR);
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+        }
+        return dwFilePathLength;
     }
 
     ObjectPathLength = strlen(lpObjectPath);
@@ -826,333 +981,426 @@ DWORD WINAPI GetFullPathExAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
         return 0;
     }
 
-    if (AreFileApisANSI())
-        p_CurrentCodePageStringToUnicodeString = (pCurrentCodePageStringToUnicodeString) g_pRtlAnsiStringToUnicodeString;
-    else p_CurrentCodePageStringToUnicodeString = (pCurrentCodePageStringToUnicodeString) g_pRtlOemStringToUnicodeString;
-
-    if (!strncmp(lpObjectPath, "\\\\?\\UNC\\", 8))
+    if (lpObjectPath[0] == '\\' && lpObjectPath[1] == '\\')
     {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 6 + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength - 7;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength - 7 + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath + 7;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 6 + 1) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer + 1;
-
-        Status = p_CurrentCodePageStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
+        if (lpObjectPath[2] == '?' && lpObjectPath[3] == '\\')
         {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+            if ((lpObjectPath[4] == 'U' || lpObjectPath[4] == 'u') &&
+                (lpObjectPath[5] == 'N' || lpObjectPath[5] == 'n') &&
+                (lpObjectPath[6] == 'C' || lpObjectPath[6] == 'c') &&
+                 lpObjectPath[7] == '\\')
+            {
+                lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 6 + 1) * sizeof(WCHAR));
 
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
+                if (lpTemporaryBuffer)
+                {
+                    AnsiString.Length = (USHORT) ObjectPathLength - 7;
+                    AnsiString.MaximumLength = (USHORT) ObjectPathLength - 7 + 1;
+                    AnsiString.Buffer = (LPSTR) lpObjectPath + 7;
 
-            return 0;
+                    UnicodeString.Length = 0;
+                    UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 6 + 1) * sizeof(WCHAR);
+                    UnicodeString.Buffer = lpTemporaryBuffer + 1;
+
+                    if (AreFileApisANSI())
+                        Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                    else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+
+                    if (!Status)
+                    {
+                        lpTemporaryBuffer[0] = '\\';
+
+                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
+
+                        if (dwFilePathLength)
+                        {
+                            dwFilePathLength += 6;
+
+                            if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
+                            {
+                                if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                                {
+                                    Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                    dwFilePathLength = 0;
+                                }
+                                else if (dwFilePathLength <= nBufferLength)
+                                {
+                                    if (lpBuffer)
+                                    {
+                                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL);
+
+                                        if (dwFilePathLength)
+                                        {
+                                            dwFilePathLength += 6;
+
+                                            if (dwFilePathLength < nBufferLength)
+                                            {
+                                                memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
+
+                                                Win32ErrorCode = NO_ERROR;
+                                            }
+                                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                        }
+                                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                    }
+                                    else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                }
+                                else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                            }
+                            else
+                            {
+                                if (lpBuffer)
+                                {
+                                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                        }
+                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                    }
+                    else
+                    {
+                        Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                        dwFilePathLength = 0;
+                    }
+                    RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+
+                    g_pRtlSetLastWin32Error(Win32ErrorCode);
+                }
+                else dwFilePathLength = 0;
+            }
+            else
+            {
+                if ((ObjectPathLength == 6) &&
+                   ((lpObjectPath[4] >= 'A' && lpObjectPath[4] <= 'Z') ||
+                    (lpObjectPath[4] >= 'a' && lpObjectPath[4] <= 'z')) &&
+                     lpObjectPath[5] == ':' && lpObjectPath[6] == 0)
+                {
+                    dwFilePathLength = 3;
+
+                    if (dwFilePathLength <= nBufferLength)
+                    {
+                        if (lpBuffer)
+                        {
+                            lpBuffer[0] = lpObjectPath[4] & (0xFF ^ ' ');
+                            lpBuffer[1] = ':';
+                            lpBuffer[2] = 0;
+
+                            dwFilePathLength--;
+
+                            g_pRtlSetLastWin32Error(NO_ERROR);
+                        }
+                        else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+                    }
+                    else goto loc_SetInsufficientBufferErrorCode;
+                }
+                else
+                {
+                    lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 2 + 1) * sizeof(WCHAR));
+
+                    if (lpTemporaryBuffer)
+                    {
+                        AnsiString.Length = (USHORT) ObjectPathLength - 2;
+                        AnsiString.MaximumLength = (USHORT) ObjectPathLength - 2 + 1;
+                        AnsiString.Buffer = (LPSTR) lpObjectPath;
+
+                        UnicodeString.Length = 0;
+                        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 2) * sizeof(WCHAR);
+                        UnicodeString.Buffer = lpTemporaryBuffer + 1;
+
+                        if (AreFileApisANSI())
+                            Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                        else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+
+                        if (!Status)
+                        {
+                            lpTemporaryBuffer[0] = '\\';
+
+                            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
+
+                            if (dwFilePathLength)
+                            {
+                                dwFilePathLength += 2;
+
+                                if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
+                                {
+                                    if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                                    {
+                                        Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                        dwFilePathLength = 0;
+                                    }
+                                    else if (dwFilePathLength <= nBufferLength)
+                                    {
+                                        if (lpBuffer)
+                                        {
+                                            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 2, lpBuffer + 2, NULL);
+
+                                            if (dwFilePathLength)
+                                            {
+                                                dwFilePathLength += 2;
+
+                                                if (dwFilePathLength < nBufferLength)
+                                                {
+                                                    memcpy(lpBuffer, L"\\\\?", 3 * sizeof(WCHAR));
+
+                                                    Win32ErrorCode = NO_ERROR;
+                                                }
+                                                else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                            }
+                                            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                        }
+                                        else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                    }
+                                    else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                }
+                                else
+                                {
+                                    if (lpBuffer)
+                                    {
+                                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                    }
+                                    else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                }
+                            }
+                            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                        }
+                        else
+                        {
+                            Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                            dwFilePathLength = 0;
+                        }
+                        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+
+                        g_pRtlSetLastWin32Error(Win32ErrorCode);
+                    }
+                    else dwFilePathLength = 0;
+                }
+            }
         }
-
-        lpTemporaryBuffer[0] = (WCHAR) (unsigned int) '\\';
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
+        else if (lpObjectPath[2] == '.' && lpObjectPath[3] == '\\')
         {
-            if (dwFilePathLength + 6 >= UNICODE_STRING_MAX_CHARS)
+            dwFilePathLength = ObjectPathLength + 1;
+
+            if (dwFilePathLength <= nBufferLength)
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                if (lpBuffer)
+                {
+                    memcpy(lpBuffer, lpObjectPath, dwFilePathLength);
 
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
+                    dwFilePathLength--;
 
-                return 0;
+                    g_pRtlSetLastWin32Error(NO_ERROR);
+                }
+                else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else if (dwFilePathLength + 6 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 6;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL);
-
-            if (dwFilePathLength)
-            {
-                memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
-
-                dwFilePathLength += 6;
-            }
+            else goto loc_SetInsufficientBufferErrorCode;
         }
         else
         {
-            if (dwFilePathLength > nBufferLength)
+            lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
+
+            if (lpTemporaryBuffer)
             {
+                AnsiString.Length = (USHORT) ObjectPathLength;
+                AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
+                AnsiString.Buffer = (LPSTR) lpObjectPath;
+
+                UnicodeString.Length = 0;
+                UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
+                UnicodeString.Buffer = lpTemporaryBuffer;
+
+                if (AreFileApisANSI())
+                    Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+
+                if (!Status)
+                {
+                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
+
+                    if (dwFilePathLength)
+                    {
+                        if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
+                        {
+                            dwFilePathLength += 6;
+
+                            if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                            {
+                                Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                dwFilePathLength = 0;
+                            }
+                            else if (dwFilePathLength <= nBufferLength)
+                            {
+                                if (lpBuffer)
+                                {
+                                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL);
+
+                                    if (dwFilePathLength)
+                                    {
+                                        dwFilePathLength += 6;
+
+                                        if (dwFilePathLength < nBufferLength)
+                                        {
+                                            memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
+
+                                            Win32ErrorCode = NO_ERROR;
+                                        }
+                                        else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                    }
+                                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                        }
+                        else
+                        {
+                            if (lpBuffer)
+                            {
+                                dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+                            }
+                            else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                        }
+                    }
+                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                }
+                else
+                {
+                    Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                    dwFilePathLength = 0;
+                }
                 RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
+                g_pRtlSetLastWin32Error(Win32ErrorCode);
             }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+            else dwFilePathLength = 0;
         }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-    }
-    else if (!strncmp(lpObjectPath, "\\\\?\\", 4))
-    {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 2 + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength - 2;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength - 2 + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 2) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer + 1;
-
-        Status = p_CurrentCodePageStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
-        {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        lpTemporaryBuffer[0] = (WCHAR) (unsigned int) '\\';
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
-        {
-            if (dwFilePathLength + 2 >= UNICODE_STRING_MAX_CHARS)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
-
-                return 0;
-            }
-            else if (dwFilePathLength + 2 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 2;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 2, lpBuffer + 2, NULL);
-
-            if (dwFilePathLength)
-            {
-                memcpy(lpBuffer, L"\\\\?", 3 * sizeof(WCHAR));
-
-                dwFilePathLength += 2;
-            }
-        }
-        else
-        {
-            if (dwFilePathLength > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
-        }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-    }
-    else if (!strncmp(lpObjectPath, "\\\\.\\", 4))
-    {
-        if (ObjectPathLength + 1 >= nBufferLength)
-        {
-            g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-            return ObjectPathLength + 1;
-        }
-
-        AnsiString.Length = (USHORT) ObjectPathLength;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) nBufferLength * sizeof(WCHAR);
-        UnicodeString.Buffer = lpBuffer;
-
-        Status = p_CurrentCodePageStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
-        {
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        dwFilePathLength = UnicodeString.Length / sizeof(WCHAR);
-    }
-    else if (!strncmp(lpObjectPath, "\\\\", 2))
-    {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer;
-
-        Status = p_CurrentCodePageStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
-        {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
-        {
-            if (dwFilePathLength + 6 >= UNICODE_STRING_MAX_CHARS)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
-
-                return 0;
-            }
-            else if (dwFilePathLength + 6 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 6;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL);
-
-            if (dwFilePathLength)
-            {
-                memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
-
-                dwFilePathLength += 6;
-            }
-        }
-        else
-        {
-            if (dwFilePathLength > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
-        }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
     }
     else
     {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer;
-
-        Status = p_CurrentCodePageStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
+        if ((ObjectPathLength == 2) &&
+           ((lpObjectPath[0] >= 'A' && lpObjectPath[0] <= 'Z') ||
+            (lpObjectPath[0] >= 'a' && lpObjectPath[0] <= 'z')) &&
+             lpObjectPath[1] == ':' && lpObjectPath[2] == 0)
         {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+            dwFilePathLength = 3;
 
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
-        {
-            if (dwFilePathLength + 4 >= UNICODE_STRING_MAX_CHARS)
+            if (dwFilePathLength <= nBufferLength)
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                if (lpBuffer)
+                {
+                    lpBuffer[0] = lpObjectPath[0] & (0xFF ^ ' ');
+                    lpBuffer[1] = ':';
+                    lpBuffer[2] = 0;
 
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
+                    dwFilePathLength--;
 
-                return 0;
+                    g_pRtlSetLastWin32Error(NO_ERROR);
+                }
+                else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else if (dwFilePathLength + 4 > nBufferLength)
+            else
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                loc_SetInsufficientBufferErrorCode:
 
                 g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 4;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 4, lpBuffer + 4, NULL);
-
-            if (dwFilePathLength)
-            {
-                memcpy(lpBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
-
-                dwFilePathLength += 4;
             }
         }
         else
         {
-            if (dwFilePathLength > nBufferLength)
+            lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
+
+            if (lpTemporaryBuffer)
             {
+                AnsiString.Length = (USHORT) ObjectPathLength;
+                AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
+                AnsiString.Buffer = (LPSTR) lpObjectPath;
+
+                UnicodeString.Length = 0;
+                UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
+                UnicodeString.Buffer = lpTemporaryBuffer;
+
+                if (AreFileApisANSI())
+                    Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+
+                if (!Status)
+                {
+                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
+
+                    if (dwFilePathLength)
+                    {
+                        if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
+                        {
+                            dwFilePathLength += 4;
+
+                            if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                            {
+                                Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                dwFilePathLength = 0;
+                            }
+                            else if (dwFilePathLength <= nBufferLength)
+                            {
+                                if (lpBuffer)
+                                {
+                                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 4, lpBuffer + 4, NULL);
+
+                                    if (dwFilePathLength)
+                                    {
+                                        dwFilePathLength += 4;
+
+                                        if (dwFilePathLength < nBufferLength)
+                                        {
+                                            memcpy(lpBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
+
+                                            Win32ErrorCode = NO_ERROR;
+                                        }
+                                        else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                    }
+                                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                        }
+                        else
+                        {
+                            if (lpBuffer)
+                            {
+                                dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+                            }
+                            else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                        }
+                    }
+                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                }
+                else
+                {
+                    Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                    dwFilePathLength = 0;
+                }
                 RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
+                g_pRtlSetLastWin32Error(Win32ErrorCode);
             }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+            else dwFilePathLength = 0;
         }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
     }
-
-    g_pRtlSetLastWin32Error(NO_ERROR);
-
     return dwFilePathLength;
 }
 
@@ -1163,21 +1411,22 @@ DWORD WINAPI GetFullPathExAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
 DWORD WINAPI GetFullPathExW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD nBufferLength, BOOL bForcedLongPathPrefix)
 {
     SIZE_T ObjectPathLength;
-    DWORD dwFilePathLength;
     LPWSTR lpTemporaryBuffer;
+    errno_t errcode;
+    DWORD Win32ErrorCode;
+    DWORD dwFilePathLength;
 
-    if (!lpObjectPath || lpObjectPath[0] == (WCHAR) 0)
+    if (!lpObjectPath || lpObjectPath[0] == 0)
     {
-        g_pRtlSetLastWin32Error(ERROR_INVALID_NAME);
+        dwFilePathLength = GetCurrentDirectoryW(nBufferLength, lpBuffer);
 
-        return 0;
-    }
-
-    if (!lpBuffer && nBufferLength)
-    {
-        g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
-
-        return 0;
+        if (dwFilePathLength)
+        {
+            if (dwFilePathLength < nBufferLength)
+                g_pRtlSetLastWin32Error(NO_ERROR);
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+        }
+        return dwFilePathLength;
     }
 
     ObjectPathLength = wcslen(lpObjectPath);
@@ -1189,195 +1438,307 @@ DWORD WINAPI GetFullPathExW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
         return 0;
     }
 
-    if (!wcsncmp(lpObjectPath, L"\\\\?\\UNC\\", 8))
+    if (lpObjectPath[0] == '\\' && lpObjectPath[1] == '\\')
     {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 6 + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        lpTemporaryBuffer[0] = (WCHAR) (unsigned int) '\\';
-
-        wcsncpy_s(lpTemporaryBuffer + 1, ObjectPathLength - 7 + 1, lpObjectPath + 7, ObjectPathLength - 7 + 1);
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
+        if (lpObjectPath[2] == '?' && lpObjectPath[3] == '\\')
         {
-            if (dwFilePathLength + 6 >= UNICODE_STRING_MAX_CHARS)
+            if ((lpObjectPath[4] == 'U' || lpObjectPath[4] == 'u') &&
+                (lpObjectPath[5] == 'N' || lpObjectPath[5] == 'n') &&
+                (lpObjectPath[6] == 'C' || lpObjectPath[6] == 'c') &&
+                 lpObjectPath[7] == '\\')
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 6 + 1) * sizeof(WCHAR));
 
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
-
-                return 0;
-            }
-            else if (dwFilePathLength + 6 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 6;
-            }
-
-            if (dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL))
-            {
-                memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
-
-                dwFilePathLength += 6;
-            }
-        }
-        else
-        {
-            if (dwFilePathLength > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
-        }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-    }
-    else if (!wcsncmp(lpObjectPath, L"\\\\?\\", 4))
-    {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 2 + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        lpTemporaryBuffer[0] = (WCHAR) (unsigned int) '\\';
-
-        wcsncpy_s(lpTemporaryBuffer + 1, ObjectPathLength - 3 + 1, lpObjectPath + 3, ObjectPathLength - 3 + 1);
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
-        {
-            if (dwFilePathLength + 2 >= UNICODE_STRING_MAX_CHARS)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
-
-                return 0;
-            }
-            else if (dwFilePathLength + 2 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 2;
-            }
-
-            if (dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 2, lpBuffer + 2, NULL))
-            {
-                memcpy(lpBuffer, L"\\\\?", 3 * sizeof(WCHAR));
-
-                dwFilePathLength += 2;
-            }
-        }
-        else
-        {
-            if (dwFilePathLength > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
-        }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-    }
-    else if (!wcsncmp(lpObjectPath, L"\\\\.\\", 4))
-    {
-        if (ObjectPathLength + 1 >= nBufferLength)
-        {
-            g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-            return ObjectPathLength + 1;
-        }
-
-        wcsncpy_s(lpBuffer, ObjectPathLength + 1, lpObjectPath, ObjectPathLength + 1);
-
-        dwFilePathLength = wcslen(lpBuffer);
-    }
-    else
-    {
-        dwFilePathLength = GetFullPathNameW(lpObjectPath, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
-        {
-            if (!wcsncmp(lpObjectPath, L"\\\\", 2))
-            {
-                if (dwFilePathLength + 6 >= UNICODE_STRING_MAX_CHARS)
+                if (lpTemporaryBuffer)
                 {
-                    g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
+                    lpTemporaryBuffer[0] = '\\';
 
-                    return 0;
+                    errcode = wcsncpy_s(lpTemporaryBuffer + 1, ObjectPathLength - 7 + 1, lpObjectPath + 7, ObjectPathLength - 7 + 1);
+
+                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
+
+                    if (dwFilePathLength)
+                    {
+                        if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
+                        {
+                            dwFilePathLength += 6;
+
+                            if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                            {
+                                Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                dwFilePathLength = 0;
+                            }
+                            else if (dwFilePathLength <= nBufferLength)
+                            {
+                                if (lpBuffer)
+                                {
+                                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL);
+
+                                    if (dwFilePathLength)
+                                    {
+                                        dwFilePathLength += 6;
+
+                                        if (dwFilePathLength < nBufferLength)
+                                        {
+                                            memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
+
+                                            Win32ErrorCode = NO_ERROR;
+                                        }
+                                        else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                    }
+                                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                        }
+                        else
+                        {
+                            if (lpBuffer)
+                            {
+                                dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+                            }
+                            else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                        }
+                    }
+                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                    RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+
+                    g_pRtlSetLastWin32Error(Win32ErrorCode);
                 }
-                else if (dwFilePathLength + 6 > nBufferLength)
-                {
-                    g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                    return dwFilePathLength + 6;
-                }
-
-                if (dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength - 6, lpBuffer + 6, NULL))
-                {
-                    memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
-
-                    dwFilePathLength += 6;
-                }
+                else dwFilePathLength = 0;
             }
             else
             {
-                if (dwFilePathLength + 4 >= UNICODE_STRING_MAX_CHARS)
+                if ((ObjectPathLength == 6) &&
+                   ((lpObjectPath[4] >= 'A' && lpObjectPath[4] <= 'Z') ||
+                    (lpObjectPath[4] >= 'a' && lpObjectPath[4] <= 'z')) &&
+                     lpObjectPath[5] == ':' && lpObjectPath[6] == 0)
+                {
+                    dwFilePathLength = 3;
+
+                    if (dwFilePathLength <= nBufferLength)
+                    {
+                        if (lpBuffer)
+                        {
+                            lpBuffer[0] = lpObjectPath[4] & (0xFF ^ ' ');
+                            lpBuffer[1] = ':';
+                            lpBuffer[2] = 0;
+
+                            dwFilePathLength--;
+                        }
+                        else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+                    }
+                    else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+                }
+                else
+                {
+                    lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 2 + 1) * sizeof(WCHAR));
+
+                    if (lpTemporaryBuffer)
+                    {
+                        lpTemporaryBuffer[0] = '\\';
+
+                        wcsncpy_s(lpTemporaryBuffer + 1, ObjectPathLength - 3 + 1, lpObjectPath + 3, ObjectPathLength - 3 + 1);
+
+                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
+
+                        if (dwFilePathLength)
+                        {
+                            if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
+                            {
+                                dwFilePathLength += 2;
+
+                                if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                                {
+                                    Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                    dwFilePathLength = 0;
+                                }
+                                else if (dwFilePathLength <= nBufferLength)
+                                {
+                                    if (lpBuffer)
+                                    {
+                                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 2, lpBuffer + 2, NULL);
+
+                                        if (dwFilePathLength)
+                                        {
+                                            dwFilePathLength += 2;
+
+                                            if (dwFilePathLength < nBufferLength)
+                                            {
+                                                memcpy(lpBuffer, L"\\\\?", 3 * sizeof(WCHAR));
+
+                                                Win32ErrorCode = NO_ERROR;
+                                            }
+                                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                        }
+                                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                    }
+                                    else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                }
+                                else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                            }
+                            else
+                            {
+                                if (lpBuffer)
+                                {
+                                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                        }
+                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+
+                        g_pRtlSetLastWin32Error(Win32ErrorCode);
+                    }
+                    else dwFilePathLength = 0;
+                }
+            }
+        }
+        else if (lpObjectPath[2] == '.' && lpObjectPath[3] == '\\')
+        {
+            dwFilePathLength = ObjectPathLength + 1;
+
+            if (dwFilePathLength <= nBufferLength)
+            {
+                if (lpBuffer)
+                {
+                    memcpy(lpBuffer, lpObjectPath, dwFilePathLength * sizeof(WCHAR));
+
+                    dwFilePathLength--;
+
+                    g_pRtlSetLastWin32Error(NO_ERROR);
+                }
+                else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+            }
+            else goto loc_SetInsufficientBufferErrorCode;
+        }
+        else
+        {
+            dwFilePathLength = GetFullPathNameW(lpObjectPath, 0, lpBuffer, NULL);
+
+            if (dwFilePathLength)
+            {
+                dwFilePathLength += 6;
+
+                if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
                 {
                     g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
 
-                    return 0;
+                    dwFilePathLength = 0;
                 }
-                else if (dwFilePathLength + 4 > nBufferLength)
+                else if (dwFilePathLength <= nBufferLength)
                 {
-                    g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+                    if (lpBuffer)
+                    {
+                        dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength - 6, lpBuffer + 6, NULL);
 
-                    return dwFilePathLength + 4;
+                        if (dwFilePathLength)
+                        {
+                            dwFilePathLength += 6;
+
+                            if (dwFilePathLength < nBufferLength)
+                            {
+                                memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
+
+                                Win32ErrorCode = NO_ERROR;
+                            }
+                            else goto loc_SetInsufficientBufferErrorCode;
+                        }
+                    }
+                    else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
                 }
+                else goto loc_SetInsufficientBufferErrorCode;
+            }
+        }
+    }
+    else
+    {
+        if ((ObjectPathLength == 2) &&
+           ((lpObjectPath[0] >= 'A' && lpObjectPath[0] <= 'Z') ||
+            (lpObjectPath[0] >= 'a' && lpObjectPath[0] <= 'z')) &&
+             lpObjectPath[1] == ':' && lpObjectPath[2] == 0)
+        {
+            dwFilePathLength = 3;
 
-                if (dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength - 4, lpBuffer + 4, NULL))
+            if (dwFilePathLength <= nBufferLength)
+            {
+                if (lpBuffer)
                 {
-                    memcpy(lpBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
+                    lpBuffer[0] = lpObjectPath[0] & (0xFF ^ ' ');
+                    lpBuffer[1] = ':';
+                    lpBuffer[2] = 0;
 
-                    dwFilePathLength += 4;
+                    dwFilePathLength--;
+
+                    g_pRtlSetLastWin32Error(NO_ERROR);
                 }
+                else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+            }
+            else
+            {
+                loc_SetInsufficientBufferErrorCode:
+
+                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
             }
         }
         else
         {
-            if (dwFilePathLength > nBufferLength)
+            dwFilePathLength = GetFullPathNameW(lpObjectPath, 0, lpBuffer, NULL);
+
+            if (dwFilePathLength)
             {
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+                if (dwFilePathLength > MAX_PATH16 || bForcedLongPathPrefix)
+                {
+                    dwFilePathLength += 4;
 
-                return dwFilePathLength;
+                    if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                    {
+                        g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
+
+                        dwFilePathLength = 0;
+                    }
+                    else if (dwFilePathLength <= nBufferLength)
+                    {
+                        if (lpBuffer)
+                        {
+                            dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength - 4, lpBuffer + 4, NULL);
+
+                            if (dwFilePathLength)
+                            {
+                                dwFilePathLength += 4;
+
+                                if (dwFilePathLength < nBufferLength)
+                                {
+                                    memcpy(lpBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
+
+                                    Win32ErrorCode = NO_ERROR;
+                                }
+                                else goto loc_SetInsufficientBufferErrorCode;
+                            }
+                        }
+                        else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+                    }
+                    else goto loc_SetInsufficientBufferErrorCode;
+                }
+                else
+                {
+                    if (lpBuffer)
+                        dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength, lpBuffer, NULL);
+                    else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+                }
             }
-
-            dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength, lpBuffer, NULL);
         }
     }
-
-    g_pRtlSetLastWin32Error(NO_ERROR);
-
     return dwFilePathLength;
 }
 
@@ -1578,9 +1939,9 @@ LPWSTR WINAPI GetFullObjectPathW(IN LPCWSTR lpObjectPath)
 
 BOOL WINAPI FreeFullObjectPathBuffer(IN PVOID lpFullObjectPathBuffer)
 {
-    if (!lpFullObjectPathBuffer)
-        return TRUE;
-    return RtlFreeHeap(g_hProcessHeap, 0, lpFullObjectPathBuffer);
+    if (lpFullObjectPathBuffer)
+        return RtlFreeHeap(g_hProcessHeap, 0, lpFullObjectPathBuffer);
+    return TRUE;
 }
 
 // getwinerrnocode
@@ -2251,34 +2612,31 @@ DWORD WINAPI NTFSLPS_CreateFileBackupA(IN LPCSTR lpExistingFileName)
     UINT cBackupFilePathBufferLength;
     DWORD Win32ErrorCode;
 
-    if (!lpExistingFileName || lpExistingFileName[0] == (CHAR) 0)
+    if (lpExistingFileName && lpExistingFileName[0])
     {
-        g_pRtlSetLastWin32Error(ERROR_PATH_NOT_FOUND);
+        lpExistingFilePathBuffer = GetFullObjectPathExA(lpExistingFileName, TRUE);
 
-        return ERROR_PATH_NOT_FOUND;
+        if (lpExistingFilePathBuffer)
+        {
+            cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
+
+            cBackupFilePathBufferLength = (cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) * sizeof(WCHAR);
+
+            lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
+
+            memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
+            memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
+
+            if (CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, FALSE)) Win32ErrorCode = NO_ERROR;
+            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+            RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
+
+            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+        }
+        else return g_pRtlGetLastWin32Error();
     }
-
-    lpExistingFilePathBuffer = GetFullObjectPathExA(lpExistingFileName, TRUE);
-
-    if (!lpExistingFilePathBuffer)
-        return g_pRtlGetLastWin32Error();
-
-    cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
-
-    cBackupFilePathBufferLength = (cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) * sizeof(WCHAR);
-
-    lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
-
-    memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
-    memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
-
-    if (CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, FALSE))
-        Win32ErrorCode = NO_ERROR;
-    else Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-    RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-
-    FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+    else Win32ErrorCode = ERROR_PATH_NOT_FOUND;
 
     g_pRtlSetLastWin32Error(Win32ErrorCode);
 
@@ -2295,137 +2653,172 @@ UINT WINAPI NTFSLPS_CreateFileBackupExA(IN LPCSTR lpExistingFileName, IN LPCSTR 
     UINT cExistingFilePathLength;
     LPWSTR lpBackupFilePathBuffer;
     UINT cBackupFilePathBufferLength;
-    DWORD Win32ErrorCode = NO_ERROR;
-    UINT uCounter = -1;
+    DWORD Win32ErrorCode;
+    UINT uCounter;
 
-    if (!lpExistingFileName || lpExistingFileName[0] == (CHAR) 0)
+    if (lpExistingFileName && lpExistingFileName[0])
     {
-        g_pRtlSetLastWin32Error(ERROR_BAD_PATHNAME);
-
-        return uCounter;
-    }
-
-    if (lpNewFileName && lpNewFileName[0] != (CHAR) 0)
-    {
-        lpExistingFilePathBuffer = GetFullObjectPathA(lpExistingFileName);
-
-        if (lpExistingFilePathBuffer)
+        if (lpNewFileName && lpNewFileName[0])
         {
-            lpBackupFilePathBuffer = GetFullObjectPathExA(lpNewFileName, TRUE);
+            lpExistingFilePathBuffer = GetFullObjectPathA(lpExistingFileName);
 
-            if (lpBackupFilePathBuffer)
+            if (lpExistingFilePathBuffer)
             {
-                if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                lpBackupFilePathBuffer = GetFullObjectPathExA(lpNewFileName, TRUE);
+
+                if (lpBackupFilePathBuffer)
+                {
+                    if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                    {
+                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                        if (Win32ErrorCode == ERROR_FILE_EXISTS)
+                        {
+                            uCounter = 1;
+
+                            cExistingFilePathLength = wcslen(lpBackupFilePathBuffer);
+
+                            *(lpBackupFilePathBuffer + cExistingFilePathLength) = (WCHAR) (unsigned int) '.';
+
+                            _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
+
+                            while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                            {
+                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                if (Win32ErrorCode != ERROR_FILE_EXISTS)
+                                {
+                                    uCounter = -1;
+
+                                    break;
+                                }
+
+                                if (uCounter >= 4294967294)
+                                {
+                                    Win32ErrorCode = ERROR_CANNOT_MAKE;
+
+                                    uCounter = -1;
+
+                                    break;
+                                }
+                                uCounter++;
+
+                                _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
+                            }
+
+                            if (uCounter != -1) Win32ErrorCode = NO_ERROR;
+                        }
+                        else uCounter = -1;
+                    }
+                    else
+                    {
+                        Win32ErrorCode = NO_ERROR;
+
+                        uCounter = 0;
+                    }
+
+                    FreeFullObjectPathBuffer(lpBackupFilePathBuffer);
+                }
+                else
                 {
                     Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-                    if (Win32ErrorCode == ERROR_FILE_EXISTS)
-                    {
-                        uCounter = 1;
-
-                        cExistingFilePathLength = wcslen(lpBackupFilePathBuffer);
-
-                        *(lpBackupFilePathBuffer + cExistingFilePathLength) = (WCHAR) (unsigned int) '.';
-
-                        _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
-
-                        while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
-                        {
-                            Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                            if (Win32ErrorCode != ERROR_FILE_EXISTS)
-                            {
-                                uCounter = -1;
-
-                                break;
-                            }
-
-                            if (uCounter >= 4294967294)
-                            {
-                                Win32ErrorCode = ERROR_CANNOT_MAKE;
-
-                                uCounter = -1;
-
-                                break;
-                            }
-                            uCounter++;
-
-                            _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
-                        }
-                    }
+                    uCounter = -1;
                 }
-                FreeFullObjectPathBuffer(lpBackupFilePathBuffer);
+
+                FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+
+                g_pRtlSetLastWin32Error(Win32ErrorCode);
             }
-            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+            else uCounter = -1;
+        }
+        else
+        {
+            lpExistingFilePathBuffer = GetFullObjectPathExA(lpExistingFileName, TRUE);
 
-            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+            if (lpExistingFilePathBuffer)
+            {
+                cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
 
-            g_pRtlSetLastWin32Error(Win32ErrorCode);
+                cBackupFilePathBufferLength = (cExistingFilePathLength + sizeof(wcszBackupFileExtension) + 10) * sizeof(WCHAR);
+
+                lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
+
+                if (lpBackupFilePathBuffer)
+                {
+                    memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
+                    memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
+
+                    if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                    {
+                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                        if (g_pRtlGetLastWin32Error() == ERROR_FILE_EXISTS)
+                        {
+                            uCounter = 1;
+
+                            *(lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR) - 1) = (WCHAR) (unsigned int) '.';
+
+                            _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
+
+                            while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                            {
+                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                if (Win32ErrorCode != ERROR_FILE_EXISTS)
+                                {
+                                    uCounter = -1;
+
+                                    break;
+                                }
+
+                                if (uCounter >= 4294967294)
+                                {
+                                    Win32ErrorCode = ERROR_CANNOT_MAKE;
+
+                                    uCounter = -1;
+
+                                    break;
+                                }
+                                uCounter++;
+
+                                _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
+                            }
+
+                            if (uCounter != -1) Win32ErrorCode = NO_ERROR;
+                        }
+                        else uCounter = -1;
+                    }
+                    else
+                    {
+                        Win32ErrorCode = NO_ERROR;
+
+                        uCounter = 0;
+                    }
+
+                    RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
+                }
+                else
+                {
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                    uCounter = -1;
+                }
+
+                FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+
+                g_pRtlSetLastWin32Error(Win32ErrorCode);
+            }
+            else uCounter = -1;
         }
     }
     else
     {
-        lpExistingFilePathBuffer = GetFullObjectPathExA(lpExistingFileName, TRUE);
+        g_pRtlSetLastWin32Error(ERROR_BAD_PATHNAME);
 
-        if (lpExistingFilePathBuffer)
-        {
-            cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
-
-            cBackupFilePathBufferLength = (cExistingFilePathLength + (sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) + 10) * sizeof(WCHAR);
-
-            lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
-
-            if (lpBackupFilePathBuffer)
-            {
-                memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
-                memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
-
-                if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
-                {
-                    Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                    if (g_pRtlGetLastWin32Error() == ERROR_FILE_EXISTS)
-                    {
-                        uCounter = 1;
-
-                        *(lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR) - 1) = (WCHAR) (unsigned int) '.';
-
-                        _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
-
-                        while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
-                        {
-                            Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                            if (Win32ErrorCode != ERROR_FILE_EXISTS)
-                            {
-                                uCounter = -1;
-
-                                break;
-                            }
-
-                            if (uCounter >= 4294967294)
-                            {
-                                Win32ErrorCode = ERROR_CANNOT_MAKE;
-
-                                uCounter = -1;
-
-                                break;
-                            }
-                            uCounter++;
-
-                            _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
-                        }
-                    }
-                }
-                RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-            }
-            else Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-
-            g_pRtlSetLastWin32Error(Win32ErrorCode);
-        }
+        uCounter = -1;
     }
+
     return uCounter;
 }
 
@@ -2439,137 +2832,172 @@ UINT WINAPI NTFSLPS_CreateFileBackupExW(IN LPCWSTR lpExistingFileName, IN LPCWST
     UINT cExistingFilePathLength;
     LPWSTR lpBackupFilePathBuffer;
     UINT cBackupFilePathBufferLength;
-    DWORD Win32ErrorCode = NO_ERROR;
-    UINT uCounter = -1;
+    DWORD Win32ErrorCode;
+    UINT uCounter;
 
-    if (!lpExistingFileName || lpExistingFileName[0] == (WCHAR) 0)
+    if (lpExistingFileName && lpExistingFileName[0])
     {
-        g_pRtlSetLastWin32Error(ERROR_BAD_PATHNAME);
-
-        return uCounter;
-    }
-
-    if (lpNewFileName && lpNewFileName[0] != (WCHAR) 0)
-    {
-        lpExistingFilePathBuffer = GetFullObjectPathW(lpExistingFileName);
-
-        if (lpExistingFilePathBuffer)
+        if (lpNewFileName && lpNewFileName[0])
         {
-            lpBackupFilePathBuffer = GetFullObjectPathExW(lpNewFileName, TRUE);
+            lpExistingFilePathBuffer = GetFullObjectPathW(lpExistingFileName);
 
-            if (lpBackupFilePathBuffer)
+            if (lpExistingFilePathBuffer)
             {
-                if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                lpBackupFilePathBuffer = GetFullObjectPathExW(lpNewFileName, TRUE);
+
+                if (lpBackupFilePathBuffer)
+                {
+                    if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                    {
+                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                        if (Win32ErrorCode == ERROR_FILE_EXISTS)
+                        {
+                            uCounter = 1;
+
+                            cExistingFilePathLength = wcslen(lpBackupFilePathBuffer);
+
+                            *(lpBackupFilePathBuffer + cExistingFilePathLength) = (WCHAR) (unsigned int) '.';
+
+                            _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
+
+                            while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                            {
+                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                if (Win32ErrorCode != ERROR_FILE_EXISTS)
+                                {
+                                    uCounter = -1;
+
+                                    break;
+                                }
+
+                                if (uCounter >= 4294967294)
+                                {
+                                    Win32ErrorCode = ERROR_CANNOT_MAKE;
+
+                                    uCounter = -1;
+
+                                    break;
+                                }
+                                uCounter++;
+
+                                _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
+                            }
+
+                            if (uCounter != -1) Win32ErrorCode = NO_ERROR;
+                        }
+                        else uCounter = -1;
+                    }
+                    else
+                    {
+                        Win32ErrorCode = NO_ERROR;
+
+                        uCounter = 0;
+                    }
+
+                    FreeFullObjectPathBuffer(lpBackupFilePathBuffer);
+                }
+                else
                 {
                     Win32ErrorCode = g_pRtlGetLastWin32Error();
 
-                    if (Win32ErrorCode == ERROR_FILE_EXISTS)
-                    {
-                        uCounter = 1;
-
-                        cExistingFilePathLength = wcslen(lpBackupFilePathBuffer);
-
-                        *(lpBackupFilePathBuffer + cExistingFilePathLength) = (WCHAR) (unsigned int) '.';
-
-                        _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
-
-                        while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
-                        {
-                            Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                            if (Win32ErrorCode != ERROR_FILE_EXISTS)
-                            {
-                                uCounter = -1;
-
-                                break;
-                            }
-
-                            if (uCounter >= 4294967294)
-                            {
-                                Win32ErrorCode = ERROR_CANNOT_MAKE;
-
-                                uCounter = -1;
-
-                                break;
-                            }
-                            uCounter++;
-
-                            _ultow_s(uCounter, lpBackupFilePathBuffer + (cExistingFilePathLength + 1), 11 * sizeof(WCHAR), 10);
-                        }
-                    }
+                    uCounter = -1;
                 }
-                FreeFullObjectPathBuffer(lpBackupFilePathBuffer);
+
+                FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+
+                g_pRtlSetLastWin32Error(Win32ErrorCode);
             }
-            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+            else uCounter = -1;
+        }
+        else
+        {
+            lpExistingFilePathBuffer = GetFullObjectPathExW(lpExistingFileName, TRUE);
 
-            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+            if (lpExistingFilePathBuffer)
+            {
+                cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
 
-            g_pRtlSetLastWin32Error(Win32ErrorCode);
+                cBackupFilePathBufferLength = (cExistingFilePathLength + sizeof(wcszBackupFileExtension) + 10) * sizeof(WCHAR);
+
+                lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
+
+                if (lpBackupFilePathBuffer)
+                {
+                    memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
+                    memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
+
+                    if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                    {
+                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                        if (g_pRtlGetLastWin32Error() == ERROR_FILE_EXISTS)
+                        {
+                            uCounter = 1;
+
+                            *(lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR) - 1) = (WCHAR) (unsigned int) '.';
+
+                            _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
+
+                            while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
+                            {
+                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                if (Win32ErrorCode != ERROR_FILE_EXISTS)
+                                {
+                                    uCounter = -1;
+
+                                    break;
+                                }
+
+                                if (uCounter >= 4294967294)
+                                {
+                                    Win32ErrorCode = ERROR_CANNOT_MAKE;
+
+                                    uCounter = -1;
+
+                                    break;
+                                }
+                                uCounter++;
+
+                                _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
+                            }
+
+                            if (uCounter != -1) Win32ErrorCode = NO_ERROR;
+                        }
+                        else uCounter = -1;
+                    }
+                    else
+                    {
+                        Win32ErrorCode = NO_ERROR;
+
+                        uCounter = 0;
+                    }
+
+                    RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
+                }
+                else
+                {
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                    uCounter = -1;
+                }
+
+                FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+
+                g_pRtlSetLastWin32Error(Win32ErrorCode);
+            }
+            else uCounter = -1;
         }
     }
     else
     {
-        lpExistingFilePathBuffer = GetFullObjectPathExW(lpExistingFileName, TRUE);
+        g_pRtlSetLastWin32Error(ERROR_BAD_PATHNAME);
 
-        if (lpExistingFilePathBuffer)
-        {
-            cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
-
-            cBackupFilePathBufferLength = (cExistingFilePathLength + (sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) + 10) * sizeof(WCHAR);
-
-            lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
-
-            if (lpBackupFilePathBuffer)
-            {
-                memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
-                memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
-
-                if (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
-                {
-                    Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                    if (g_pRtlGetLastWin32Error() == ERROR_FILE_EXISTS)
-                    {
-                        uCounter = 1;
-
-                        *(lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR) - 1) = (WCHAR) (unsigned int) '.';
-
-                        _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
-
-                        while (!CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, TRUE))
-                        {
-                            Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                            if (Win32ErrorCode != ERROR_FILE_EXISTS)
-                            {
-                                uCounter = -1;
-
-                                break;
-                            }
-
-                            if (uCounter >= 4294967294)
-                            {
-                                Win32ErrorCode = ERROR_CANNOT_MAKE;
-
-                                uCounter = -1;
-
-                                break;
-                            }
-                            uCounter++;
-
-                            _ultow_s(uCounter, lpBackupFilePathBuffer + cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR), 11 * sizeof(WCHAR), 10);
-                        }
-                    }
-                }
-                RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-            }
-            else Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
-
-            g_pRtlSetLastWin32Error(Win32ErrorCode);
-        }
+        uCounter = -1;
     }
+
     return uCounter;
 }
 
@@ -2585,34 +3013,31 @@ DWORD WINAPI NTFSLPS_CreateFileBackupW(IN LPCWSTR lpExistingFileName)
     UINT cBackupFilePathBufferLength;
     DWORD Win32ErrorCode;
 
-    if (!lpExistingFileName || lpExistingFileName[0] == (WCHAR) 0)
+    if (lpExistingFileName && lpExistingFileName[0])
     {
-        g_pRtlSetLastWin32Error(ERROR_PATH_NOT_FOUND);
+        lpExistingFilePathBuffer = GetFullObjectPathExW(lpExistingFileName, TRUE);
 
-        return ERROR_PATH_NOT_FOUND;
+        if (lpExistingFilePathBuffer)
+        {
+            cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
+
+            cBackupFilePathBufferLength = (cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) * sizeof(WCHAR);
+
+            lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
+
+            memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
+            memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
+
+            if (CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, FALSE)) Win32ErrorCode = NO_ERROR;
+            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+            RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
+
+            FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+        }
+        else return g_pRtlGetLastWin32Error();
     }
-
-    lpExistingFilePathBuffer = GetFullObjectPathExW(lpExistingFileName, TRUE);
-
-    if (!lpExistingFilePathBuffer)
-        return g_pRtlGetLastWin32Error();
-
-    cExistingFilePathLength = wcslen(lpExistingFilePathBuffer);
-
-    cBackupFilePathBufferLength = (cExistingFilePathLength + sizeof(wcszBackupFileExtension) / sizeof(WCHAR)) * sizeof(WCHAR);
-
-    lpBackupFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, cBackupFilePathBufferLength);
-
-    memcpy(lpBackupFilePathBuffer, lpExistingFilePathBuffer, cExistingFilePathLength * sizeof(WCHAR));
-    memcpy(lpBackupFilePathBuffer + cExistingFilePathLength, wcszBackupFileExtension, sizeof(wcszBackupFileExtension) - sizeof(WCHAR));
-
-    if (CopyFileW(lpExistingFilePathBuffer, lpBackupFilePathBuffer, FALSE))
-        Win32ErrorCode = NO_ERROR;
-    else Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-    RtlFreeHeap(g_hProcessHeap, 0, lpBackupFilePathBuffer);
-
-    FreeFullObjectPathBuffer(lpExistingFilePathBuffer);
+    else Win32ErrorCode = ERROR_PATH_NOT_FOUND;
 
     g_pRtlSetLastWin32Error(Win32ErrorCode);
 
@@ -3930,6 +4355,15 @@ DWORD WINAPI NTFSLPS_DumpToFileW(IN LPCWSTR lpFileName, IN LPVOID lpMemory, IN U
     return Win32ErrorCode;
 }
 
+// NTFSLPS_FindClose
+// -----------------
+// Implemented: 100%
+
+BOOL WINAPI NTFSLPS_FindClose(IN OUT HANDLE hFindFile)
+{
+    return FindClose(hFindFile);
+}
+
 // NTFSLPS_FindFirstFileA
 // ----------------------
 // Implemented: 100%
@@ -4896,82 +5330,13 @@ DWORD WINAPI NTFSLPS_GetFileAttributesW(IN LPCWSTR lpFileName)
     return dwResult;
 }
 
-// NTFSLPS_GetFileSystemObjectAttributesA
-// --------------------------------------
+// NTFSLPS_GetFileSizeEx
+// ---------------------
 // Implemented: 100%
 
-DWORD WINAPI NTFSLPS_GetFileSystemObjectAttributesA(IN LPCSTR lpObjectPath)
+BOOL WINAPI NTFSLPS_GetFileSizeEx(IN HANDLE hFile, OUT PLARGE_INTEGER lpFileSize)
 {
-    HANDLE hObject;
-    BY_HANDLE_FILE_INFORMATION ObjectInformation;
-    DWORD Win32ErrorCode;
-
-    hObject = NTFSLPS_CreateFileA(lpObjectPath, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, NULL);
-
-    if (hObject == INVALID_HANDLE_VALUE)
-    {
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-        if (Win32ErrorCode == ERROR_ACCESS_DENIED)
-            return NTFSLPS_GetFileAttributesA(lpObjectPath); // !!! FIXME !!! Попытка получить атрибуты через "костыль", при недостаточном уровне прав доступа. Необходимо создать и инициализировать "сисюрити десриптор" для NTFSLPS_CreateFileA!
-        return INVALID_FILE_ATTRIBUTES;
-    }
-
-    if (!GetFileInformationByHandle(hObject, &ObjectInformation))
-    {
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-        ObjectInformation.dwFileAttributes = INVALID_FILE_ATTRIBUTES;
-    }
-    else Win32ErrorCode = NO_ERROR;
-
-    CloseHandle(hObject);
-
-    g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-    return ObjectInformation.dwFileAttributes;
-}
-
-// NTFSLPS_GetFileSystemObjectAttributesW
-// --------------------------------------
-// Implemented: 100%
-
-DWORD WINAPI NTFSLPS_GetFileSystemObjectAttributesW(IN LPCWSTR lpObjectPath)
-{
-    HANDLE hObject;
-    BY_HANDLE_FILE_INFORMATION ObjectInformation;
-    DWORD Win32ErrorCode;
-
-    hObject = NTFSLPS_CreateFileW(lpObjectPath, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE | FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-
-    if (hObject == INVALID_HANDLE_VALUE)
-    {
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-        if (Win32ErrorCode == ERROR_ACCESS_DENIED)
-            return NTFSLPS_GetFileAttributesW(lpObjectPath); // !!! FIXME !!! Попытка получить атрибуты через "костыль", при недостаточном уровне прав доступа. Необходимо создать и инициализировать "сисюрити десриптор" для NTFSLPS_CreateFileW!
-        return INVALID_FILE_ATTRIBUTES;
-    }
-
-    if (!GetFileInformationByHandle(hObject, &ObjectInformation))
-    {
-        Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-        if (Win32ErrorCode == ERROR_ACCESS_DENIED)
-        {
-            CloseHandle(hObject);
-
-            return NTFSLPS_GetFileAttributesW(lpObjectPath);
-        }
-        ObjectInformation.dwFileAttributes = INVALID_FILE_ATTRIBUTES;
-    }
-    else Win32ErrorCode = NO_ERROR;
-
-    CloseHandle(hObject);
-
-    g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-    return ObjectInformation.dwFileAttributes;
+    return g_pGetFileSizeEx(hFile, lpFileSize);
 }
 
 // NTFSLPS_GetFinalPathNameByHandleA
@@ -5035,18 +5400,17 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
     NTSTATUS Status;
     DWORD Win32ErrorCode;
 
-    if (!lpObjectPath || lpObjectPath[0] == (CHAR) 0)
+    if (!lpObjectPath || lpObjectPath[0] == 0)
     {
-        g_pRtlSetLastWin32Error(ERROR_INVALID_NAME);
+        dwFilePathLength = GetCurrentDirectoryA(nBufferLength, lpBuffer);
 
-        return 0;
-    }
-
-    if (!lpBuffer && nBufferLength)
-    {
-        g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
-
-        return 0;
+        if (dwFilePathLength)
+        {
+            if (dwFilePathLength < nBufferLength)
+                g_pRtlSetLastWin32Error(NO_ERROR);
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+        }
+        return dwFilePathLength;
     }
 
     ObjectPathLength = strlen(lpObjectPath);
@@ -5058,627 +5422,706 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
         return 0;
     }
 
-    if (!strncmp(lpObjectPath, "\\\\?\\UNC\\", 8))
+    if (lpObjectPath[0] == '\\' && lpObjectPath[1] == '\\')
     {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 6 + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength - 7;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength - 7 + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath + 7;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 6 + 1) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer + 1;
-
-        if (AreFileApisANSI())
-            Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-        else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
+        if (lpObjectPath[2] == '?' && lpObjectPath[3] == '\\')
         {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        lpTemporaryBuffer[0] = (WCHAR) (unsigned int) '\\';
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16)
-        {
-            if (dwFilePathLength + 6 >= UNICODE_STRING_MAX_CHARS)
+            if ((lpObjectPath[4] == 'U' || lpObjectPath[4] == 'u') &&
+                (lpObjectPath[5] == 'N' || lpObjectPath[5] == 'n') &&
+                (lpObjectPath[6] == 'C' || lpObjectPath[6] == 'c') &&
+                 lpObjectPath[7] == '\\')
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 6 + 1) * sizeof(WCHAR));
 
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
-
-                return 0;
-            }
-            else if (dwFilePathLength + 6 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 6;
-            }
-
-            lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (dwFilePathLength + 6) * sizeof(WCHAR));
-
-            if (!lpFullPathTemporaryBuffer)
-            {
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-                return 0;
-            }
-
-            if (dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer + 6, NULL))
-            {
-                memcpy(lpFullPathTemporaryBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
-
-                dwFilePathLength += 6;
-
-                AnsiString.Length = 0;
-                if (nBufferLength > UNICODE_STRING_MAX_CHARS)
-                    AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
-                else
-                    AnsiString.MaximumLength = (USHORT) nBufferLength;
-                AnsiString.Buffer = lpBuffer;
-
-                UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
-                UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
-                UnicodeString.Buffer = lpFullPathTemporaryBuffer;
-
-                if (AreFileApisANSI())
-                    Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
-                else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
-
-                if (Status)
+                if (lpTemporaryBuffer)
                 {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
+                    AnsiString.Length = (USHORT) ObjectPathLength - 7;
+                    AnsiString.MaximumLength = (USHORT) ObjectPathLength - 7 + 1;
+                    AnsiString.Buffer = (LPSTR) lpObjectPath + 7;
+
+                    UnicodeString.Length = 0;
+                    UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 6 + 1) * sizeof(WCHAR);
+                    UnicodeString.Buffer = lpTemporaryBuffer + 1;
+
+                    if (AreFileApisANSI())
+                        Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                    else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+
+                    if (!Status)
+                    {
+                        lpTemporaryBuffer[0] = '\\';
+
+                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
+
+                        if (dwFilePathLength)
+                        {
+                            if (dwFilePathLength > MAX_PATH16)
+                            {
+                                dwFilePathLength += 6;
+
+                                if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                                {
+                                    Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                    dwFilePathLength = 0;
+                                }
+                                else if (dwFilePathLength <= nBufferLength)
+                                {
+                                    if (lpBuffer)
+                                    {
+                                        lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (dwFilePathLength + 6) * sizeof(WCHAR));
+
+                                        if (lpFullPathTemporaryBuffer)
+                                        {
+                                            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength - 6, lpFullPathTemporaryBuffer + 6, NULL);
+
+                                            if (dwFilePathLength)
+                                            {
+                                                memcpy(lpFullPathTemporaryBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
+
+                                                dwFilePathLength += 6;
+
+                                                AnsiString.Length = 0;
+                                                if (nBufferLength > UNICODE_STRING_MAX_CHARS)
+                                                    AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
+                                                else AnsiString.MaximumLength = (USHORT) nBufferLength;
+                                                AnsiString.Buffer = lpBuffer;
+
+                                                UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
+                                                UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
+                                                UnicodeString.Buffer = lpFullPathTemporaryBuffer;
+
+                                                if (AreFileApisANSI())
+                                                    Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
+                                                else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
+
+                                                if (Status)
+                                                {
+                                                    Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                                                    dwFilePathLength = 0;
+                                                }
+                                                else Win32ErrorCode = NO_ERROR;
+                                            }
+                                            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                            RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
+                                        }
+                                        else
+                                        {
+                                            Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                            dwFilePathLength = 0;
+                                        }
+                                    }
+                                    else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                }
+                                else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                            }
+                            else
+                            {
+                                if (dwFilePathLength <= nBufferLength)
+                                {
+                                    if (lpBuffer)
+                                    {
+                                        lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, dwFilePathLength * sizeof(WCHAR));
+
+                                        if (lpFullPathTemporaryBuffer)
+                                        {
+                                            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer, NULL);
+
+                                            if (dwFilePathLength)
+                                            {
+                                                AnsiString.Length = 0;
+                                                if (nBufferLength > UNICODE_STRING_MAX_CHARS)
+                                                    AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
+                                                else AnsiString.MaximumLength = (USHORT) nBufferLength;
+                                                AnsiString.Buffer = lpBuffer;
+
+                                                UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
+                                                UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
+                                                UnicodeString.Buffer = lpFullPathTemporaryBuffer;
+
+                                                if (AreFileApisANSI())
+                                                    Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
+                                                else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
+
+                                                if (Status)
+                                                {
+                                                    Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                                                    dwFilePathLength = 0;
+                                                }
+                                                else Win32ErrorCode = NO_ERROR;
+                                            }
+                                            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                            RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
+                                        }
+                                        else
+                                        {
+                                            Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                            dwFilePathLength = 0;
+                                        }
+                                    }
+                                    else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                }
+                                else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                            }
+                        }
+                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                    }
+                    else
+                    {
+                        Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                        dwFilePathLength = 0;
+                    }
                     RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
-                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
+                    g_pRtlSetLastWin32Error(Win32ErrorCode);
+                }
+                else dwFilePathLength = 0;
+            }
+            else
+            {
+                if ((ObjectPathLength == 6) &&
+                   ((lpObjectPath[4] >= 'A' && lpObjectPath[4] <= 'Z') ||
+                    (lpObjectPath[4] >= 'a' && lpObjectPath[4] <= 'z')) &&
+                     lpObjectPath[5] == ':' && lpObjectPath[6] == 0)
+                {
+                    dwFilePathLength = 3;
 
-                    return 0;
+                    if (dwFilePathLength <= nBufferLength)
+                    {
+                        if (lpBuffer)
+                        {
+                            lpBuffer[0] = lpObjectPath[4] & (0xFF ^ ' ');
+                            lpBuffer[1] = ':';
+                            lpBuffer[2] = 0;
+
+                            dwFilePathLength--;
+
+                            g_pRtlSetLastWin32Error(NO_ERROR);
+                        }
+                        else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+                    }
+                    else goto loc_SetInsufficientBufferErrorCode;
+                }
+                else
+                {
+                    lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 2 + 1) * sizeof(WCHAR));
+
+                    if (lpTemporaryBuffer)
+                    {
+                        AnsiString.Length = (USHORT) ObjectPathLength - 2;
+                        AnsiString.MaximumLength = (USHORT) ObjectPathLength - 2 + 1;
+                        AnsiString.Buffer = (LPSTR) lpObjectPath;
+
+                        UnicodeString.Length = 0;
+                        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 2) * sizeof(WCHAR);
+                        UnicodeString.Buffer = lpTemporaryBuffer + 1;
+
+                        if (AreFileApisANSI())
+                            Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                        else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+
+                        if (!Status)
+                        {
+                            lpTemporaryBuffer[0] = '\\';
+
+                            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
+
+                            if (dwFilePathLength)
+                            {
+                                if (dwFilePathLength > MAX_PATH16)
+                                {
+                                    dwFilePathLength += 2;
+
+                                    if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                                    {
+                                        Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                        dwFilePathLength = 0;
+                                    }
+                                    else if (dwFilePathLength <= nBufferLength)
+                                    {
+                                        if (lpBuffer)
+                                        {
+                                            lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (dwFilePathLength + 2) * sizeof(WCHAR));
+
+                                            if (lpFullPathTemporaryBuffer)
+                                            {
+                                                dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer + 2, NULL);
+
+                                                if (dwFilePathLength)
+                                                {
+                                                    memcpy(lpFullPathTemporaryBuffer, L"\\\\?", 3 * sizeof(WCHAR));
+
+                                                    dwFilePathLength += 2;
+
+                                                    AnsiString.Length = 0;
+                                                    if (nBufferLength > UNICODE_STRING_MAX_CHARS)
+                                                        AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
+                                                    else AnsiString.MaximumLength = (USHORT) nBufferLength;
+                                                    AnsiString.Buffer = lpBuffer;
+
+                                                    UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
+                                                    UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
+                                                    UnicodeString.Buffer = lpFullPathTemporaryBuffer;
+
+                                                    if (AreFileApisANSI())
+                                                        Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
+                                                    else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
+
+                                                    if (Status)
+                                                    {
+                                                        Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                                                        dwFilePathLength = 0;
+                                                    }
+                                                    else Win32ErrorCode = NO_ERROR;
+                                                }
+                                                else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                                RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
+                                            }
+                                            else
+                                            {
+                                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                                dwFilePathLength = 0;
+                                            }
+                                        }
+                                        else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                    }
+                                    else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                }
+                                else
+                                {
+                                    if (dwFilePathLength <= nBufferLength)
+                                    {
+                                        if (lpBuffer)
+                                        {
+                                            lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, dwFilePathLength * sizeof(WCHAR));
+
+                                            if (lpFullPathTemporaryBuffer)
+                                            {
+                                                dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer, NULL);
+
+                                                if (dwFilePathLength)
+                                                {
+                                                    AnsiString.Length = 0;
+                                                    if (nBufferLength > UNICODE_STRING_MAX_CHARS)
+                                                        AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
+                                                    else AnsiString.MaximumLength = (USHORT) nBufferLength;
+                                                    AnsiString.Buffer = lpBuffer;
+
+                                                    UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
+                                                    UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
+                                                    UnicodeString.Buffer = lpFullPathTemporaryBuffer;
+
+                                                    if (AreFileApisANSI())
+                                                        Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
+                                                    else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
+
+                                                    if (Status)
+                                                    {
+                                                        Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                                                        dwFilePathLength = 0;
+                                                    }
+                                                    else Win32ErrorCode = NO_ERROR;
+                                                }
+                                                else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                                RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
+                                            }
+                                            else
+                                            {
+                                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                                dwFilePathLength = 0;
+                                            }
+                                        }
+                                        else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                    }
+                                    else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                }
+                            }
+                            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                        }
+                        else
+                        {
+                            Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                            dwFilePathLength = 0;
+                        }
+                        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+
+                        g_pRtlSetLastWin32Error(Win32ErrorCode);
+                    }
+                    else dwFilePathLength = 0;
                 }
             }
+        }
+        else if (lpObjectPath[2] == '.' && lpObjectPath[3] == '\\')
+        {
+            dwFilePathLength = ObjectPathLength + 1;
+
+            if (dwFilePathLength <= nBufferLength)
+            {
+                if (lpBuffer)
+                {
+                    memcpy(lpBuffer, lpObjectPath, dwFilePathLength);
+
+                    dwFilePathLength--;
+
+                    g_pRtlSetLastWin32Error(NO_ERROR);
+                }
+                else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+            }
+            else goto loc_SetInsufficientBufferErrorCode;
         }
         else
         {
-            if (dwFilePathLength > nBufferLength)
+            lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
+
+            if (lpTemporaryBuffer)
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                AnsiString.Length = (USHORT) ObjectPathLength;
+                AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
+                AnsiString.Buffer = (LPSTR) lpObjectPath;
 
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+                UnicodeString.Length = 0;
+                UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
+                UnicodeString.Buffer = lpTemporaryBuffer;
 
-                return dwFilePathLength;
-            }
+                if (AreFileApisANSI())
+                    Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
 
-            lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, dwFilePathLength * sizeof(WCHAR));
+                if (!Status)
+                {
+                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
 
-            if (!lpFullPathTemporaryBuffer)
-            {
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
+                    if (dwFilePathLength)
+                    {
+                        if (dwFilePathLength > MAX_PATH16)
+                        {
+                            dwFilePathLength += 6;
 
+                            if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                            {
+                                Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                dwFilePathLength = 0;
+                            }
+                            else if (dwFilePathLength <= nBufferLength)
+                            {
+                                if (lpBuffer)
+                                {
+                                    lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (dwFilePathLength + 6) * sizeof(WCHAR));
+
+                                    if (lpFullPathTemporaryBuffer)
+                                    {
+                                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer + 6, NULL);
+
+                                        if (dwFilePathLength)
+                                        {
+                                            memcpy(lpFullPathTemporaryBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
+
+                                            dwFilePathLength += 6;
+
+                                            AnsiString.Length = 0;
+                                            if (nBufferLength > UNICODE_STRING_MAX_CHARS)
+                                                AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
+                                            else AnsiString.MaximumLength = (USHORT) nBufferLength;
+                                            AnsiString.Buffer = lpBuffer;
+
+                                            UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
+                                            UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
+                                            UnicodeString.Buffer = lpFullPathTemporaryBuffer;
+
+                                            if (AreFileApisANSI())
+                                                Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
+                                            else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
+
+                                            if (Status)
+                                            {
+                                                Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                                                dwFilePathLength = 0;
+                                            }
+                                            else Win32ErrorCode = NO_ERROR;
+                                        }
+                                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                        RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
+                                    }
+                                    else
+                                    {
+                                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                        dwFilePathLength = 0;
+                                    }
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                        }
+                        else
+                        {
+                            if (dwFilePathLength <= nBufferLength)
+                            {
+                                if (lpBuffer)
+                                {
+                                    lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, dwFilePathLength * sizeof(WCHAR));
+
+                                    if (lpFullPathTemporaryBuffer)
+                                    {
+                                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer, NULL);
+
+                                        if (dwFilePathLength)
+                                        {
+                                            AnsiString.Length = 0;
+                                            if (nBufferLength > UNICODE_STRING_MAX_CHARS)
+                                                AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
+                                            else AnsiString.MaximumLength = (USHORT) nBufferLength;
+                                            AnsiString.Buffer = lpBuffer;
+
+                                            UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
+                                            UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
+                                            UnicodeString.Buffer = lpFullPathTemporaryBuffer;
+
+                                            if (AreFileApisANSI())
+                                                Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
+                                            else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
+
+                                            if (Status)
+                                            {
+                                                Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                                                dwFilePathLength = 0;
+                                            }
+                                            else Win32ErrorCode = NO_ERROR;
+                                        }
+                                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                        RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
+                                    }
+                                    else
+                                    {
+                                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                        dwFilePathLength = 0;
+                                    }
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                        }
+                    }
+                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                }
+                else
+                {
+                    Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                    dwFilePathLength = 0;
+                }
                 RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
                 g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-                return 0;
             }
-
-            if (dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer, NULL))
-            {
-                AnsiString.Length = 0;
-                if (nBufferLength > UNICODE_STRING_MAX_CHARS)
-                    AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
-                else
-                    AnsiString.MaximumLength = (USHORT) nBufferLength;
-                AnsiString.Buffer = lpBuffer;
-
-                UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
-                UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
-                UnicodeString.Buffer = lpFullPathTemporaryBuffer;
-
-                if (AreFileApisANSI())
-                    Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
-                else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
-
-                if (Status)
-                {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
-                    RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-                    return 0;
-                }
-            }
+            else dwFilePathLength = 0;
         }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-    }
-    else if (!strncmp(lpObjectPath, "\\\\?\\", 4))
-    {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 2 + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength - 2;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength - 2 + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength - 2) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer + 1;
-
-        if (AreFileApisANSI())
-            Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-        else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
-        {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        lpTemporaryBuffer[0] = (WCHAR) (unsigned int) '\\';
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16)
-        {
-            if (dwFilePathLength + 2 >= UNICODE_STRING_MAX_CHARS)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
-
-                return 0;
-            }
-            else if (dwFilePathLength + 2 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 2;
-            }
-
-            lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (dwFilePathLength + 2) * sizeof(WCHAR));
-
-            if (!lpFullPathTemporaryBuffer)
-            {
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-                return 0;
-            }
-
-            if (dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer + 2, NULL))
-            {
-                memcpy(lpFullPathTemporaryBuffer, L"\\\\?", 3 * sizeof(WCHAR));
-
-                dwFilePathLength += 2;
-
-                AnsiString.Length = 0;
-                if (nBufferLength > UNICODE_STRING_MAX_CHARS)
-                    AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
-                else
-                    AnsiString.MaximumLength = (USHORT) nBufferLength;
-                AnsiString.Buffer = lpBuffer;
-
-                UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
-                UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
-                UnicodeString.Buffer = lpFullPathTemporaryBuffer;
-
-                if (AreFileApisANSI())
-                    Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
-                else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
-
-                if (Status)
-                {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
-                    RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-                    return 0;
-                }
-            }
-        }
-        else
-        {
-            if (dwFilePathLength > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
-            }
-
-            lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, dwFilePathLength * sizeof(WCHAR));
-
-            if (!lpFullPathTemporaryBuffer)
-            {
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-                return 0;
-            }
-
-            if (dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpFullPathTemporaryBuffer, NULL))
-            {
-                AnsiString.Length = 0;
-                if (nBufferLength > UNICODE_STRING_MAX_CHARS)
-                    AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
-                else
-                    AnsiString.MaximumLength = (USHORT) nBufferLength;
-                AnsiString.Buffer = lpBuffer;
-
-                UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
-                UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
-                UnicodeString.Buffer = lpFullPathTemporaryBuffer;
-
-                if (AreFileApisANSI())
-                    Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
-                else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
-
-                if (Status)
-                {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
-                    RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-                    return 0;
-                }
-            }
-        }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-    }
-    else if (!strncmp(lpObjectPath, "\\\\.\\", 4))
-    {
-        if (ObjectPathLength + 1 >= nBufferLength)
-        {
-            g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-            return ObjectPathLength + 1;
-        }
-
-        strncpy_s(lpBuffer, ObjectPathLength + 1, lpObjectPath, ObjectPathLength + 1);
-
-        dwFilePathLength = strlen(lpBuffer);
-    }
-    else if (!strncmp(lpObjectPath, "\\\\", 2))
-    {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer;
-
-        if (AreFileApisANSI())
-            Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-        else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
-        {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16)
-        {
-            if (dwFilePathLength + 6 >= UNICODE_STRING_MAX_CHARS)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
-
-                return 0;
-            }
-            else if (dwFilePathLength + 6 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 6;
-            }
-
-            lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (dwFilePathLength + 6) * sizeof(WCHAR));
-
-            if (!lpFullPathTemporaryBuffer)
-            {
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-                return 0;
-            }
-
-            if (dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer + 6, NULL))
-            {
-                memcpy(lpFullPathTemporaryBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
-
-                dwFilePathLength += 6;
-
-                AnsiString.Length = 0;
-                if (nBufferLength > UNICODE_STRING_MAX_CHARS)
-                    AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
-                else
-                    AnsiString.MaximumLength = (USHORT) nBufferLength;
-                AnsiString.Buffer = lpBuffer;
-
-                UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
-                UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
-                UnicodeString.Buffer = lpFullPathTemporaryBuffer;
-
-                if (AreFileApisANSI())
-                    Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
-                else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
-
-                if (Status)
-                {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
-                    RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-                    return 0;
-                }
-            }
-        }
-        else
-        {
-            if (dwFilePathLength > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
-            }
-
-            lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, dwFilePathLength * sizeof(WCHAR));
-
-            if (!lpFullPathTemporaryBuffer)
-            {
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-                return 0;
-            }
-
-            if (dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer, NULL))
-            {
-                AnsiString.Length = 0;
-                if (nBufferLength > UNICODE_STRING_MAX_CHARS)
-                    AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
-                else
-                    AnsiString.MaximumLength = (USHORT) nBufferLength;
-                AnsiString.Buffer = lpBuffer;
-
-                UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
-                UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
-                UnicodeString.Buffer = lpFullPathTemporaryBuffer;
-
-                if (AreFileApisANSI())
-                    Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
-                else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
-
-                if (Status)
-                {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
-                    RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-                    return 0;
-                }
-            }
-        }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
     }
     else
     {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        AnsiString.Length = (USHORT) ObjectPathLength;
-        AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
-        AnsiString.Buffer = (LPSTR) lpObjectPath;
-
-        UnicodeString.Length = 0;
-        UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
-        UnicodeString.Buffer = lpTemporaryBuffer;
-
-        if (AreFileApisANSI())
-            Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-        else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
-
-        if (Status)
+        if ((ObjectPathLength == 2) &&
+           ((lpObjectPath[0] >= 'A' && lpObjectPath[0] <= 'Z') ||
+            (lpObjectPath[0] >= 'a' && lpObjectPath[0] <= 'z')) &&
+             lpObjectPath[1] == ':' && lpObjectPath[2] == 0)
         {
-            RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+            dwFilePathLength = 3;
 
-            g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-            return 0;
-        }
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16)
-        {
-            if (dwFilePathLength + 4 >= UNICODE_STRING_MAX_CHARS)
+            if (dwFilePathLength <= nBufferLength)
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                if (lpBuffer)
+                {
+                    lpBuffer[0] = lpObjectPath[0] & (0xFF ^ ' ');
+                    lpBuffer[1] = ':';
+                    lpBuffer[2] = 0;
 
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
+                    dwFilePathLength--;
 
-                return 0;
+                    g_pRtlSetLastWin32Error(NO_ERROR);
+                }
+                else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else if (dwFilePathLength + 4 > nBufferLength)
+            else
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                loc_SetInsufficientBufferErrorCode:
 
                 g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 4;
-            }
-
-            lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (dwFilePathLength + 4) * sizeof(WCHAR));
-
-            if (!lpFullPathTemporaryBuffer)
-            {
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-                return 0;
-            }
-
-            if (dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer + 4, NULL))
-            {
-                memcpy(lpFullPathTemporaryBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
-
-                dwFilePathLength += 4;
-
-                AnsiString.Length = 0;
-                if (nBufferLength > UNICODE_STRING_MAX_CHARS)
-                    AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
-                else
-                    AnsiString.MaximumLength = (USHORT) nBufferLength;
-                AnsiString.Buffer = lpBuffer;
-
-                UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
-                UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
-                UnicodeString.Buffer = lpFullPathTemporaryBuffer;
-
-                if (AreFileApisANSI())
-                    Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
-                else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
-
-                if (Status)
-                {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
-                    RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-                    return 0;
-                }
             }
         }
         else
         {
-            if (dwFilePathLength > nBufferLength)
+            lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength + 1) * sizeof(WCHAR));
+
+            if (lpTemporaryBuffer)
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                AnsiString.Length = (USHORT) ObjectPathLength;
+                AnsiString.MaximumLength = (USHORT) ObjectPathLength + 1;
+                AnsiString.Buffer = (LPSTR) lpObjectPath;
 
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+                UnicodeString.Length = 0;
+                UnicodeString.MaximumLength = (USHORT) (ObjectPathLength + 1) * sizeof(WCHAR);
+                UnicodeString.Buffer = lpTemporaryBuffer;
 
-                return dwFilePathLength;
-            }
+                if (AreFileApisANSI())
+                    Status = g_pRtlAnsiStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
+                else Status = g_pRtlOemStringToUnicodeString(&UnicodeString, &AnsiString, FALSE);
 
-            lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, dwFilePathLength * sizeof(WCHAR));
+                if (!Status)
+                {
+                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, (LPWSTR) lpBuffer, NULL);
 
-            if (!lpFullPathTemporaryBuffer)
-            {
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
+                    if (dwFilePathLength)
+                    {
+                        if (dwFilePathLength > MAX_PATH16)
+                        {
+                            dwFilePathLength += 4;
 
+                            if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                            {
+                                Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                dwFilePathLength = 0;
+                            }
+                            else if (dwFilePathLength <= nBufferLength)
+                            {
+                                if (lpBuffer)
+                                {
+                                    lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (dwFilePathLength + 4) * sizeof(WCHAR));
+
+                                    if (lpFullPathTemporaryBuffer)
+                                    {
+                                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer + 4, NULL);
+
+                                        if (dwFilePathLength)
+                                        {
+                                            memcpy(lpFullPathTemporaryBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
+
+                                            dwFilePathLength += 4;
+
+                                            AnsiString.Length = 0;
+                                            if (nBufferLength > UNICODE_STRING_MAX_CHARS)
+                                                AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
+                                            else AnsiString.MaximumLength = (USHORT) nBufferLength;
+                                            AnsiString.Buffer = lpBuffer;
+
+                                            UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
+                                            UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
+                                            UnicodeString.Buffer = lpFullPathTemporaryBuffer;
+
+                                            if (AreFileApisANSI())
+                                                Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
+                                            else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
+
+                                            if (Status)
+                                            {
+                                                Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                                                dwFilePathLength = 0;
+                                            }
+                                            else Win32ErrorCode = NO_ERROR;
+                                        }
+                                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                        RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
+                                    }
+                                    else
+                                    {
+                                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                        dwFilePathLength = 0;
+                                    }
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                        }
+                        else
+                        {
+                            if (dwFilePathLength <= nBufferLength)
+                            {
+                                if (lpBuffer)
+                                {
+                                    lpFullPathTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, dwFilePathLength * sizeof(WCHAR));
+
+                                    if (lpFullPathTemporaryBuffer)
+                                    {
+                                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer, NULL);
+
+                                        if (dwFilePathLength)
+                                        {
+                                            AnsiString.Length = 0;
+                                            if (nBufferLength > UNICODE_STRING_MAX_CHARS)
+                                                AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
+                                            else AnsiString.MaximumLength = (USHORT) nBufferLength;
+                                            AnsiString.Buffer = lpBuffer;
+
+                                            UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
+                                            UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
+                                            UnicodeString.Buffer = lpFullPathTemporaryBuffer;
+
+                                            if (AreFileApisANSI())
+                                                Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
+                                            else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
+
+                                            if (Status)
+                                            {
+                                                Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                                                dwFilePathLength = 0;
+                                            }
+                                            else Win32ErrorCode = NO_ERROR;
+                                        }
+                                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                        RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
+                                    }
+                                    else
+                                    {
+                                        Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                                        dwFilePathLength = 0;
+                                    }
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                        }
+                    }
+                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                }
+                else
+                {
+                    Win32ErrorCode = g_pRtlNtStatusToDosError(Status);
+
+                    dwFilePathLength = 0;
+                }
                 RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
 
                 g_pRtlSetLastWin32Error(Win32ErrorCode);
-
-                return 0;
             }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, dwFilePathLength, lpFullPathTemporaryBuffer, NULL);
-
-            if (dwFilePathLength)
-            {
-                AnsiString.Length = 0;
-                if (nBufferLength > UNICODE_STRING_MAX_CHARS)
-                    AnsiString.MaximumLength = UNICODE_STRING_MAX_CHARS;
-                else
-                    AnsiString.MaximumLength = (USHORT) nBufferLength;
-                AnsiString.Buffer = lpBuffer;
-
-                UnicodeString.Length = (USHORT) dwFilePathLength * sizeof(WCHAR);
-                UnicodeString.MaximumLength = (USHORT) (dwFilePathLength + 1) * sizeof(WCHAR);
-                UnicodeString.Buffer = lpFullPathTemporaryBuffer;
-
-                if (AreFileApisANSI())
-                    Status = g_pRtlUnicodeStringToAnsiString(&AnsiString, &UnicodeString, FALSE);
-                else Status = g_pRtlUnicodeStringToOemString(&AnsiString, &UnicodeString, FALSE);
-
-                if (Status)
-                {
-                    RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
-                    RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                    g_pRtlSetLastWin32Error(g_pRtlNtStatusToDosError(Status));
-
-                    return 0;
-                }
-            }
+            else dwFilePathLength = 0;
         }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpFullPathTemporaryBuffer);
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
     }
-    g_pRtlSetLastWin32Error(NO_ERROR);
-
     return dwFilePathLength;
 }
 
@@ -5708,16 +6151,13 @@ DWORD WINAPI NTFSLPS_GetFullPathNameA(IN LPCSTR lpFileName, IN DWORD nBufferLeng
 
             if (dwResult && dwResult < nBufferLength)
             {
-                if (UnicodePathStringToAnsiPathString((LPCWSTR) lpTemporaryBuffer, lpBuffer, nBufferLength))
-                {
-                    *lpFilePart = (lpTemporaryFilePart - lpTemporaryBuffer) / sizeof(WCHAR) + lpBuffer;
-                }
-                else
+                if (!UnicodePathStringToAnsiPathString((LPCWSTR) lpTemporaryBuffer, lpBuffer, nBufferLength))
                 {
                     Win32ErrorCode = g_pRtlGetLastWin32Error();
 
                     dwResult = 0;
                 }
+                else if (lpFilePart) *lpFilePart = (lpTemporaryFilePart - lpTemporaryBuffer) / sizeof(WCHAR) + lpBuffer;
             }
             RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
         }
@@ -5764,16 +6204,13 @@ DWORD WINAPI NTFSLPS_GetFullPathNameTransactedA(IN LPCSTR lpFileName, IN DWORD n
 
                 if (dwResult && dwResult < nBufferLength)
                 {
-                    if (UnicodePathStringToAnsiPathString((LPCWSTR) lpTemporaryBuffer, lpBuffer, nBufferLength))
-                    {
-                        *lpFilePart = (lpTemporaryFilePart - lpTemporaryBuffer) / sizeof(WCHAR) + lpBuffer;
-                    }
-                    else
+                    if (!UnicodePathStringToAnsiPathString((LPCWSTR) lpTemporaryBuffer, lpBuffer, nBufferLength))
                     {
                         Win32ErrorCode = g_pRtlGetLastWin32Error();
 
                         dwResult = 0;
                     }
+                    else if (lpFilePart) *lpFilePart = (lpTemporaryFilePart - lpTemporaryBuffer) / sizeof(WCHAR) + lpBuffer;
                 }
                 RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
             }
@@ -5859,21 +6296,22 @@ DWORD WINAPI NTFSLPS_GetFullPathNameW(IN LPCWSTR lpFileName, IN DWORD nBufferLen
 DWORD WINAPI NTFSLPS_GetFullPathW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD nBufferLength)
 {
     SIZE_T ObjectPathLength;
-    DWORD dwFilePathLength;
     LPWSTR lpTemporaryBuffer;
+    errno_t errcode;
+    DWORD Win32ErrorCode;
+    DWORD dwFilePathLength;
 
-    if (!lpObjectPath || lpObjectPath[0] == (WCHAR) 0)
+    if (!lpObjectPath || lpObjectPath[0] == 0)
     {
-        g_pRtlSetLastWin32Error(ERROR_INVALID_NAME);
+        dwFilePathLength = GetCurrentDirectoryW(nBufferLength, lpBuffer);
 
-        return 0;
-    }
-
-    if (!lpBuffer && nBufferLength)
-    {
-        g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
-
-        return 0;
+        if (dwFilePathLength)
+        {
+            if (dwFilePathLength < nBufferLength)
+                g_pRtlSetLastWin32Error(NO_ERROR);
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+        }
+        return dwFilePathLength;
     }
 
     ObjectPathLength = wcslen(lpObjectPath);
@@ -5885,194 +6323,307 @@ DWORD WINAPI NTFSLPS_GetFullPathW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, 
         return 0;
     }
 
-    if (!wcsncmp(lpObjectPath, L"\\\\?\\UNC\\", 8))
+    if (lpObjectPath[0] == '\\' && lpObjectPath[1] == '\\')
     {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 6 + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        lpTemporaryBuffer[0] = (WCHAR) (unsigned int) '\\';
-
-        wcsncpy_s(lpTemporaryBuffer + 1, ObjectPathLength - 7 + 1, lpObjectPath + 7, ObjectPathLength - 7 + 1);
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16)
+        if (lpObjectPath[2] == '?' && lpObjectPath[3] == '\\')
         {
-            if (dwFilePathLength + 6 >= UNICODE_STRING_MAX_CHARS)
+            if ((lpObjectPath[4] == 'U' || lpObjectPath[4] == 'u') &&
+                (lpObjectPath[5] == 'N' || lpObjectPath[5] == 'n') &&
+                (lpObjectPath[6] == 'C' || lpObjectPath[6] == 'c') &&
+                 lpObjectPath[7] == '\\')
             {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+                lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 6 + 1) * sizeof(WCHAR));
 
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
-
-                return 0;
-            }
-            else if (dwFilePathLength + 6 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 6;
-            }
-
-            if (dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL))
-            {
-                memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
-
-                dwFilePathLength += 6;
-            }
-        }
-        else
-        {
-            if (dwFilePathLength > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
-        }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-    }
-    else if (!wcsncmp(lpObjectPath, L"\\\\?\\", 4))
-    {
-        lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 2 + 1) * sizeof(WCHAR));
-
-        if (!lpTemporaryBuffer)
-            return 0;
-
-        lpTemporaryBuffer[0] = (WCHAR) (unsigned int) '\\';
-
-        wcsncpy_s(lpTemporaryBuffer + 1, ObjectPathLength - 3 + 1, lpObjectPath + 3, ObjectPathLength - 3 + 1);
-
-        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16)
-        {
-            if (dwFilePathLength + 2 >= UNICODE_STRING_MAX_CHARS)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
-
-                return 0;
-            }
-            else if (dwFilePathLength + 2 > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength + 2;
-            }
-
-            if (dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 2, lpBuffer + 2, NULL))
-            {
-                memcpy(lpBuffer, L"\\\\?", 3 * sizeof(WCHAR));
-
-                dwFilePathLength += 2;
-            }
-        }
-        else
-        {
-            if (dwFilePathLength > nBufferLength)
-            {
-                RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                return dwFilePathLength;
-            }
-
-            dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
-        }
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
-    }
-    else if (!wcsncmp(lpObjectPath, L"\\\\.\\", 4))
-    {
-        if (ObjectPathLength + 1 >= nBufferLength)
-        {
-            g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-            return ObjectPathLength + 1;
-        }
-
-        wcsncpy_s(lpBuffer, ObjectPathLength + 1, lpObjectPath, ObjectPathLength + 1);
-
-        dwFilePathLength = wcslen(lpBuffer);
-    }
-    else
-    {
-        dwFilePathLength = GetFullPathNameW(lpObjectPath, 0, lpBuffer, NULL);
-
-        if (dwFilePathLength > MAX_PATH16)
-        {
-            if (!wcsncmp(lpObjectPath, L"\\\\", 2))
-            {
-                if (dwFilePathLength + 6 >= UNICODE_STRING_MAX_CHARS)
+                if (lpTemporaryBuffer)
                 {
-                    g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
+                    lpTemporaryBuffer[0] = '\\';
 
-                    return 0;
+                    errcode = wcsncpy_s(lpTemporaryBuffer + 1, ObjectPathLength - 7 + 1, lpObjectPath + 7, ObjectPathLength - 7 + 1);
+
+                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
+
+                    if (dwFilePathLength)
+                    {
+                        if (dwFilePathLength > MAX_PATH16)
+                        {
+                            dwFilePathLength += 6;
+
+                            if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                            {
+                                Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                dwFilePathLength = 0;
+                            }
+                            else if (dwFilePathLength <= nBufferLength)
+                            {
+                                if (lpBuffer)
+                                {
+                                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 6, lpBuffer + 6, NULL);
+
+                                    if (dwFilePathLength)
+                                    {
+                                        dwFilePathLength += 6;
+
+                                        if (dwFilePathLength < nBufferLength)
+                                        {
+                                            memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
+
+                                            Win32ErrorCode = NO_ERROR;
+                                        }
+                                        else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                    }
+                                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                        }
+                        else
+                        {
+                            if (lpBuffer)
+                            {
+                                dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                Win32ErrorCode = g_pRtlGetLastWin32Error();
+                            }
+                            else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                        }
+                    }
+                    else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                    RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+
+                    g_pRtlSetLastWin32Error(Win32ErrorCode);
                 }
-                else if (dwFilePathLength + 6 > nBufferLength)
-                {
-                    g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-
-                    return dwFilePathLength + 6;
-                }
-
-                if (dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength - 6, lpBuffer + 6, NULL))
-                {
-                    memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
-
-                    dwFilePathLength += 6;
-                }
+                else dwFilePathLength = 0;
             }
             else
             {
-                if (dwFilePathLength + 4 >= UNICODE_STRING_MAX_CHARS)
+                if ((ObjectPathLength == 6) &&
+                   ((lpObjectPath[4] >= 'A' && lpObjectPath[4] <= 'Z') ||
+                    (lpObjectPath[4] >= 'a' && lpObjectPath[4] <= 'z')) &&
+                     lpObjectPath[5] == ':' && lpObjectPath[6] == 0)
+                {
+                    dwFilePathLength = 3;
+
+                    if (dwFilePathLength <= nBufferLength)
+                    {
+                        if (lpBuffer)
+                        {
+                            lpBuffer[0] = lpObjectPath[4] & (0xFF ^ ' ');
+                            lpBuffer[1] = ':';
+                            lpBuffer[2] = 0;
+
+                            dwFilePathLength--;
+                        }
+                        else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+                    }
+                    else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+                }
+                else
+                {
+                    lpTemporaryBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, (ObjectPathLength - 2 + 1) * sizeof(WCHAR));
+
+                    if (lpTemporaryBuffer)
+                    {
+                        lpTemporaryBuffer[0] = '\\';
+
+                        wcsncpy_s(lpTemporaryBuffer + 1, ObjectPathLength - 3 + 1, lpObjectPath + 3, ObjectPathLength - 3 + 1);
+
+                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, 0, lpBuffer, NULL);
+
+                        if (dwFilePathLength)
+                        {
+                            if (dwFilePathLength > MAX_PATH16)
+                            {
+                                dwFilePathLength += 2;
+
+                                if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                                {
+                                    Win32ErrorCode = ERROR_FILENAME_EXCED_RANGE;
+
+                                    dwFilePathLength = 0;
+                                }
+                                else if (dwFilePathLength <= nBufferLength)
+                                {
+                                    if (lpBuffer)
+                                    {
+                                        dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength - 2, lpBuffer + 2, NULL);
+
+                                        if (dwFilePathLength)
+                                        {
+                                            dwFilePathLength += 2;
+
+                                            if (dwFilePathLength < nBufferLength)
+                                            {
+                                                memcpy(lpBuffer, L"\\\\?", 3 * sizeof(WCHAR));
+
+                                                Win32ErrorCode = NO_ERROR;
+                                            }
+                                            else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                                        }
+                                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                    }
+                                    else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                                }
+                                else Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                            }
+                            else
+                            {
+                                if (lpBuffer)
+                                {
+                                    dwFilePathLength = GetFullPathNameW(lpTemporaryBuffer, nBufferLength, lpBuffer, NULL);
+
+                                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+                                }
+                                else Win32ErrorCode = ERROR_INVALID_USER_BUFFER;
+                            }
+                        }
+                        else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                        RtlFreeHeap(g_hProcessHeap, 0, lpTemporaryBuffer);
+
+                        g_pRtlSetLastWin32Error(Win32ErrorCode);
+                    }
+                    else dwFilePathLength = 0;
+                }
+            }
+        }
+        else if (lpObjectPath[2] == '.' && lpObjectPath[3] == '\\')
+        {
+            dwFilePathLength = ObjectPathLength + 1;
+
+            if (dwFilePathLength <= nBufferLength)
+            {
+                if (lpBuffer)
+                {
+                    memcpy(lpBuffer, lpObjectPath, dwFilePathLength * sizeof(WCHAR));
+
+                    dwFilePathLength--;
+
+                    g_pRtlSetLastWin32Error(NO_ERROR);
+                }
+                else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+            }
+            else goto loc_SetInsufficientBufferErrorCode;
+        }
+        else
+        {
+            dwFilePathLength = GetFullPathNameW(lpObjectPath, 0, lpBuffer, NULL);
+
+            if (dwFilePathLength)
+            {
+                dwFilePathLength += 6;
+
+                if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
                 {
                     g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
 
-                    return 0;
+                    dwFilePathLength = 0;
                 }
-                else if (dwFilePathLength + 4 > nBufferLength)
+                else if (dwFilePathLength <= nBufferLength)
                 {
-                    g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+                    if (lpBuffer)
+                    {
+                        dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength - 6, lpBuffer + 6, NULL);
 
-                    return dwFilePathLength + 4;
+                        if (dwFilePathLength)
+                        {
+                            dwFilePathLength += 6;
+
+                            if (dwFilePathLength < nBufferLength)
+                            {
+                                memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
+
+                                Win32ErrorCode = NO_ERROR;
+                            }
+                            else goto loc_SetInsufficientBufferErrorCode;
+                        }
+                    }
+                    else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
                 }
+                else goto loc_SetInsufficientBufferErrorCode;
+            }
+        }
+    }
+    else
+    {
+        if ((ObjectPathLength == 2) &&
+           ((lpObjectPath[0] >= 'A' && lpObjectPath[0] <= 'Z') ||
+            (lpObjectPath[0] >= 'a' && lpObjectPath[0] <= 'z')) &&
+             lpObjectPath[1] == ':' && lpObjectPath[2] == 0)
+        {
+            dwFilePathLength = 3;
 
-                if (dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength - 4, lpBuffer + 4, NULL))
+            if (dwFilePathLength <= nBufferLength)
+            {
+                if (lpBuffer)
                 {
-                    memcpy(lpBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
+                    lpBuffer[0] = lpObjectPath[0] & (0xFF ^ ' ');
+                    lpBuffer[1] = ':';
+                    lpBuffer[2] = 0;
 
-                    dwFilePathLength += 4;
+                    dwFilePathLength--;
+
+                    g_pRtlSetLastWin32Error(NO_ERROR);
                 }
+                else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+            }
+            else
+            {
+                loc_SetInsufficientBufferErrorCode:
+
+                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
             }
         }
         else
         {
-            if (dwFilePathLength > nBufferLength)
+            dwFilePathLength = GetFullPathNameW(lpObjectPath, 0, lpBuffer, NULL);
+
+            if (dwFilePathLength)
             {
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+                if (dwFilePathLength > MAX_PATH16)
+                {
+                    dwFilePathLength += 4;
 
-                return dwFilePathLength;
+                    if (dwFilePathLength >= UNICODE_STRING_MAX_CHARS)
+                    {
+                        g_pRtlSetLastWin32Error(ERROR_FILENAME_EXCED_RANGE);
+
+                        dwFilePathLength = 0;
+                    }
+                    else if (dwFilePathLength <= nBufferLength)
+                    {
+                        if (lpBuffer)
+                        {
+                            dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength - 4, lpBuffer + 4, NULL);
+
+                            if (dwFilePathLength)
+                            {
+                                dwFilePathLength += 4;
+
+                                if (dwFilePathLength < nBufferLength)
+                                {
+                                    memcpy(lpBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
+
+                                    Win32ErrorCode = NO_ERROR;
+                                }
+                                else goto loc_SetInsufficientBufferErrorCode;
+                            }
+                        }
+                        else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+                    }
+                    else goto loc_SetInsufficientBufferErrorCode;
+                }
+                else
+                {
+                    if (lpBuffer)
+                        dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength, lpBuffer, NULL);
+                    else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
+                }
             }
-
-            dwFilePathLength = GetFullPathNameW(lpObjectPath, nBufferLength, lpBuffer, NULL);
         }
     }
-    g_pRtlSetLastWin32Error(NO_ERROR);
-
     return dwFilePathLength;
 }
 
@@ -6228,6 +6779,56 @@ DWORD WINAPI NTFSLPS_GetLongPathNameW(IN LPCWSTR lpszShortPath, OUT LPWSTR lpszL
     return dwResult;
 }
 
+// NTFSLPS_GetMappedFileNameA
+// --------------------------
+// Implemented: 100%
+
+DWORD WINAPI NTFSLPS_GetMappedFileNameA(IN HANDLE hProcess, IN LPVOID lpv, OUT LPSTR lpFilename, IN DWORD nSize)
+{
+    LPWSTR lpFilePathBuffer;
+    DWORD Win32ErrorCode;
+    DWORD dwResult;
+
+    if (nSize > MAX_PATH16)
+    {
+        lpFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, nSize * sizeof(WCHAR));
+
+        if (lpFilePathBuffer)
+        {
+            dwResult = g_pGetMappedFileNameW(hProcess, lpv, lpFilePathBuffer, nSize);
+
+            if (dwResult)
+            {
+                if (!UnicodeStringToAnsiString((LPCWSTR) lpFilePathBuffer, lpFilename, nSize))
+                {
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                    dwResult = 0;
+                }
+                else Win32ErrorCode = NO_ERROR;
+            }
+            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+            RtlFreeHeap(g_hProcessHeap, 0, lpFilePathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else dwResult = 0;
+    }
+    else dwResult = g_pGetMappedFileNameA(hProcess, lpv, lpFilename, nSize);
+
+    return dwResult;
+}
+
+// NTFSLPS_GetMappedFileNameW
+// --------------------------
+// Implemented: 100%
+
+DWORD WINAPI NTFSLPS_GetMappedFileNameW(IN HANDLE hProcess, IN LPVOID lpv, OUT LPWSTR lpFilename, IN DWORD nSize)
+{
+    return g_pGetMappedFileNameW(hProcess, lpv, lpFilename, nSize);
+}
+
 // NTFSLPS_GetModuleFileNameA
 // --------------------------
 // Implemented: 100%
@@ -6238,30 +6839,107 @@ DWORD WINAPI NTFSLPS_GetModuleFileNameA(IN HMODULE hModule, OUT LPSTR lpFilename
     DWORD Win32ErrorCode;
     DWORD dwResult;
 
-    lpFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, nSize * sizeof(WCHAR));
-
-    if (lpFilePathBuffer)
+    if (nSize)
     {
-        dwResult = GetModuleFileNameW(hModule, lpFilePathBuffer, nSize);
+        lpFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, nSize * sizeof(WCHAR));
 
-        if (dwResult && dwResult < nSize)
+        if (lpFilePathBuffer)
         {
-            if (!UnicodeStringToAnsiString((LPCWSTR) lpFilePathBuffer, lpFilename, nSize))
-            {
-                Win32ErrorCode = g_pRtlGetLastWin32Error();
+            Win32ErrorCode = NO_ERROR;
 
-                dwResult = 0;
+            dwResult = GetModuleFileNameW(hModule, lpFilePathBuffer, nSize);
+
+            if (dwResult)
+            {
+                if (dwResult == nSize)
+                {
+                    if (!g_pRtlGetLastWin32Error())
+                        *(lpFilePathBuffer + nSize - 1) = (WCHAR) 0;
+
+                    Win32ErrorCode = ERROR_INSUFFICIENT_BUFFER;
+                }
+
+                if (!UnicodeStringToAnsiString((LPCWSTR) lpFilePathBuffer, lpFilename, nSize))
+                {
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                    dwResult = 0;
+                }
+            }
+            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+            RtlFreeHeap(g_hProcessHeap, 0, lpFilePathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else
+        {
+            dwResult = GetModuleFileNameA(hModule, lpFilename, nSize);
+
+            if (dwResult >= nSize)
+            {
+                if (!g_pRtlGetLastWin32Error())
+                {
+                    *(lpFilename + nSize - 1) = (CHAR) 0;
+
+                    g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+                }
             }
         }
-        else Win32ErrorCode = g_pRtlGetLastWin32Error();
-
-        RtlFreeHeap(g_hProcessHeap, 0, lpFilePathBuffer);
-
-        g_pRtlSetLastWin32Error(Win32ErrorCode);
     }
-    else dwResult = GetModuleFileNameA(hModule, lpFilename, nSize);
+    else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
 
     return dwResult;
+}
+
+// NTFSLPS_GetModuleFileNameExA
+// ----------------------------
+// Implemented: 100%
+
+DWORD WINAPI NTFSLPS_GetModuleFileNameExA(IN HANDLE hProcess, IN HMODULE hModule, OUT LPSTR lpFilename, IN DWORD nSize)
+{
+    LPWSTR lpFilePathBuffer;
+    DWORD Win32ErrorCode;
+    DWORD dwResult;
+
+    if (nSize > MAX_PATH16)
+    {
+        lpFilePathBuffer = RtlAllocateHeap(g_hProcessHeap, HEAP_ZERO_MEMORY, nSize * sizeof(WCHAR));
+
+        if (lpFilePathBuffer)
+        {
+            dwResult = g_pGetModuleFileNameExW(hProcess, hModule, lpFilePathBuffer, nSize);
+
+            if (dwResult)
+            {
+                if (!UnicodeStringToAnsiString((LPCWSTR) lpFilePathBuffer, lpFilename, nSize))
+                {
+                    Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+                    dwResult = 0;
+                }
+                else Win32ErrorCode = NO_ERROR;
+            }
+            else Win32ErrorCode = g_pRtlGetLastWin32Error();
+
+            RtlFreeHeap(g_hProcessHeap, 0, lpFilePathBuffer);
+
+            g_pRtlSetLastWin32Error(Win32ErrorCode);
+        }
+        else dwResult = 0;
+    }
+    else dwResult = g_pGetModuleFileNameExA(hProcess, hModule, lpFilename, nSize);
+
+    return dwResult;
+}
+
+// NTFSLPS_GetModuleFileNameExW
+// ----------------------------
+// Implemented: 100%
+
+DWORD WINAPI NTFSLPS_GetModuleFileNameExW(IN HANDLE hProcess, IN HMODULE hModule, OUT LPWSTR lpFilename, IN DWORD nSize)
+{
+    return g_pGetModuleFileNameExW(hProcess, hModule, lpFilename, nSize);
 }
 
 // NTFSLPS_GetModuleFileNameW
@@ -6270,7 +6948,81 @@ DWORD WINAPI NTFSLPS_GetModuleFileNameA(IN HMODULE hModule, OUT LPSTR lpFilename
 
 DWORD WINAPI NTFSLPS_GetModuleFileNameW(IN HMODULE hModule, OUT LPWSTR lpFilename, IN DWORD nSize)
 {
-    return GetModuleFileNameW(hModule, lpFilename, nSize);
+    DWORD dwResult;
+
+    if (nSize)
+    {
+        g_pRtlSetLastWin32Error(NO_ERROR);
+
+        dwResult = GetModuleFileNameW(hModule, lpFilename, nSize);
+
+        if (dwResult == nSize)
+        {
+            if (!g_pRtlGetLastWin32Error())
+            {
+                *(lpFilename + nSize - 1) = (WCHAR) 0;
+
+                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+            }
+        }
+    }
+    else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
+
+    return dwResult;
+}
+
+// NTFSLPS_GetSystemDirectoryA
+// ---------------------------
+// Implemented: 100%
+
+UINT WINAPI NTFSLPS_GetSystemDirectoryA(OUT LPSTR lpBuffer, IN UINT uSize)
+{
+    return GetSystemDirectoryA(lpBuffer, uSize);
+}
+
+// NTFSLPS_GetSystemDirectoryW
+// ---------------------------
+// Implemented: 100%
+
+UINT WINAPI NTFSLPS_GetSystemDirectoryW(OUT LPWSTR lpBuffer, IN UINT uSize)
+{
+    return GetSystemDirectoryW(lpBuffer, uSize);
+}
+
+// NTFSLPS_GetSystemWindowsDirectoryA
+// ----------------------------------
+// Implemented: 100%
+
+UINT WINAPI NTFSLPS_GetSystemWindowsDirectoryA(OUT LPSTR lpBuffer, IN UINT uSize)
+{
+    return GetSystemWindowsDirectoryA(lpBuffer, uSize);
+}
+
+// NTFSLPS_GetSystemWindowsDirectoryW
+// ----------------------------------
+// Implemented: 100%
+
+UINT WINAPI NTFSLPS_GetSystemWindowsDirectoryW(OUT LPWSTR lpBuffer, IN UINT uSize)
+{
+    return GetSystemWindowsDirectoryW(lpBuffer, uSize);
+}
+
+// NTFSLPS_GetWindowsDirectoryA
+// ----------------------------
+// Implemented: 100%
+
+UINT WINAPI NTFSLPS_GetWindowsDirectoryA(OUT LPSTR lpBuffer, IN UINT uSize)
+{
+    return GetWindowsDirectoryA(lpBuffer, uSize);
+}
+
+// NTFSLPS_GetWindowsDirectoryW
+// ----------------------------
+// Implemented: 100%
+
+UINT WINAPI NTFSLPS_GetWindowsDirectoryW(OUT LPWSTR lpBuffer, IN UINT uSize)
+{
+    return GetWindowsDirectoryW(lpBuffer, uSize);
 }
 
 // NTFSLPS_IsPathExistA
@@ -7232,6 +7984,204 @@ BOOL WINAPI NTFSLPS_ReplaceFileA(IN LPCSTR lpReplacedFileName, IN LPCSTR lpRepla
     return bResult;
 }
 
+// NTFSLPS_ReplaceFilePathExtensionA
+// ---------------------------------
+// Implemented: 100%
+
+DWORD WINAPI NTFSLPS_ReplaceFilePathExtensionA(IN OUT LPSTR lpObjectPath, IN DWORD nSize, LPCSTR lpExtension)
+{
+    DWORD dwResult;
+
+    if (lpObjectPath)
+    {
+        if (nSize)
+        {
+            LPSTR lpTemporary;
+            LPSTR lpObjectExtension = 0;
+
+            for (lpTemporary = lpObjectPath; lpTemporary < lpObjectPath + nSize; lpTemporary++)
+            {
+                register CHAR ch = *lpTemporary;
+
+                if ((ch == '\\') || (ch == '.') || (ch == '/'))
+                    lpObjectExtension = lpTemporary;
+                else if (!ch)
+                {
+                    dwResult = lpTemporary - lpObjectPath;
+                    break;
+                }
+            }
+
+            if (dwResult < UNICODE_STRING_MAX_CHARS)
+            {
+                if (dwResult < nSize)
+                {
+                    if ((lpObjectExtension == lpObjectPath + dwResult - 1) &&
+                        (lpObjectExtension != lpObjectPath) &&
+                      ((*lpObjectExtension == '\\') || (*lpObjectExtension == '/')))
+                    {
+                        do { lpObjectExtension--; } while (lpObjectExtension != lpObjectPath && ((*lpObjectExtension == '\\') || (*lpObjectExtension == '/')));
+
+                        lpObjectExtension++;
+                    }
+                    else if (!lpObjectExtension || ((lpObjectExtension != lpObjectPath) && ((*lpObjectExtension == '\\') || (*lpObjectExtension == '/'))))
+                        lpObjectExtension = lpObjectPath + dwResult;
+
+                    if (lpExtension)
+                    {
+                        (LPCSTR) lpTemporary = lpExtension;
+
+                        while (lpObjectExtension < lpObjectPath + nSize)
+                        {
+                            register CHAR ch = *lpTemporary;
+
+                            *lpObjectExtension = ch;
+
+                            if (!ch) break;
+
+                            lpObjectExtension++;
+                            lpTemporary++;
+                        }
+
+                        dwResult = lpObjectExtension - lpObjectPath;
+
+                        if (dwResult == nSize)
+                        {
+                            SetLastError(ERROR_INSUFFICIENT_BUFFER);
+
+                            *(lpObjectExtension - 1) = 0;
+                        }
+                    }
+                    else *lpObjectExtension = 0;
+
+                    SetLastError(NO_ERROR);
+                }
+                else SetLastError(ERROR_MORE_DATA);
+            }
+            else
+            {
+                SetLastError(ERROR_FILENAME_EXCED_RANGE);
+
+                goto loc_ZeroizeResult;
+            }
+        }
+        else
+        {
+            SetLastError(ERROR_INVALID_USER_BUFFER);
+
+            goto loc_ZeroizeResult;
+        }
+    }
+    else
+    {
+        SetLastError(ERROR_INVALID_NAME);
+
+        loc_ZeroizeResult:
+
+        dwResult = 0;
+    }
+    return dwResult;
+}
+
+// NTFSLPS_ReplaceFilePathExtensionW
+// ---------------------------------
+// Implemented: 100%
+
+DWORD WINAPI NTFSLPS_ReplaceFilePathExtensionW(IN OUT LPWSTR lpObjectPath, IN DWORD nSize, LPCWSTR lpExtension)
+{
+    DWORD dwResult;
+
+    if (lpObjectPath)
+    {
+        if (nSize)
+        {
+            LPWSTR lpTemporary;
+            LPWSTR lpObjectExtension = 0;
+
+            for (lpTemporary = lpObjectPath; lpTemporary < lpObjectPath + nSize; lpTemporary++)
+            {
+                register WCHAR ch = *lpTemporary;
+
+                if ((ch == '\\') || (ch == '.') || (ch == '/'))
+                    lpObjectExtension = lpTemporary;
+                else if (!ch)
+                {
+                    dwResult = lpTemporary - lpObjectPath;
+                    break;
+                }
+            }
+
+            if (dwResult < UNICODE_STRING_MAX_CHARS)
+            {
+                if (dwResult < nSize)
+                {
+                    if ((lpObjectExtension == lpObjectPath + dwResult - 1) &&
+                        (lpObjectExtension != lpObjectPath) &&
+                      ((*lpObjectExtension == '\\') || (*lpObjectExtension == '/')))
+                    {
+                        do { lpObjectExtension--; } while (lpObjectExtension != lpObjectPath && ((*lpObjectExtension == '\\') || (*lpObjectExtension == '/')));
+
+                        lpObjectExtension++;
+                    }
+                    else if (!lpObjectExtension || ((lpObjectExtension != lpObjectPath) && ((*lpObjectExtension == '\\') || (*lpObjectExtension == '/'))))
+                        lpObjectExtension = lpObjectPath + dwResult;
+
+                    if (lpExtension)
+                    {
+                        (LPCWSTR) lpTemporary = lpExtension;
+
+                        while (lpObjectExtension < lpObjectPath + nSize)
+                        {
+                            register WCHAR ch = *lpTemporary;
+
+                            *lpObjectExtension = ch;
+
+                            if (!ch) break;
+
+                            lpObjectExtension++;
+                            lpTemporary++;
+                        }
+
+                        dwResult = lpObjectExtension - lpObjectPath;
+
+                        if (dwResult == nSize)
+                        {
+                            SetLastError(ERROR_INSUFFICIENT_BUFFER);
+
+                            *(lpObjectExtension - 1) = 0;
+                        }
+                    }
+                    else *lpObjectExtension = 0;
+
+                    SetLastError(NO_ERROR);
+                }
+                else SetLastError(ERROR_MORE_DATA);
+            }
+            else
+            {
+                SetLastError(ERROR_FILENAME_EXCED_RANGE);
+
+                goto loc_ZeroizeResult;
+            }
+        }
+        else
+        {
+            SetLastError(ERROR_INVALID_USER_BUFFER);
+
+            goto loc_ZeroizeResult;
+        }
+    }
+    else
+    {
+        SetLastError(ERROR_INVALID_NAME);
+
+        loc_ZeroizeResult:
+
+        dwResult = 0;
+    }
+    return dwResult;
+}
+
 // NTFSLPS_ReplaceFileW
 // --------------------
 // Implemented: 100%
@@ -8121,6 +9071,24 @@ BOOL WINAPI stubGetFileAttributesTransactedW(IN LPCWSTR lpFileName, IN GET_FILEE
     return FALSE;
 }
 
+// stubGetFileSizeEx
+// -----------------
+// Implemented: 100%
+
+BOOL WINAPI stubGetFileSizeEx(IN HANDLE hFile, OUT PLARGE_INTEGER lpFileSize)
+{
+    LARGE_INTEGER FileSize;
+
+    FileSize.LowPart = GetFileSize(hFile, (LPDWORD) &FileSize.HighPart);
+
+    if ((FileSize.LowPart == INVALID_FILE_SIZE) && GetLastError())
+        return FALSE;
+
+    lpFileSize->QuadPart = FileSize.QuadPart;
+
+    return TRUE;
+}
+
 // stubGetFinalPathNameByHandleA
 // -----------------------------
 // Implemented: 100%
@@ -8181,6 +9149,50 @@ DWORD WINAPI stubGetLongPathNameTransactedA(IN LPCSTR lpszShortPath, OUT LPSTR l
 // Implemented: 100%
 
 DWORD WINAPI stubGetLongPathNameTransactedW(IN LPCWSTR lpszShortPath, OUT LPWSTR lpszLongPath, IN DWORD cchBuffer, IN HANDLE hTransaction)
+{
+    g_pRtlSetLastWin32Error(ERROR_CALL_NOT_IMPLEMENTED);
+
+    return 0;
+}
+
+// stubGetMappedFileNameA
+// ----------------------
+// Implemented: 100%
+
+DWORD WINAPI stubGetMappedFileNameA(IN HANDLE hProcess, IN LPVOID lpv, OUT LPSTR lpFilename, IN DWORD nSize)
+{
+    g_pRtlSetLastWin32Error(ERROR_CALL_NOT_IMPLEMENTED);
+
+    return 0;
+}
+
+// stubGetMappedFileNameW
+// ----------------------
+// Implemented: 100%
+
+DWORD WINAPI stubGetMappedFileNameW(IN HANDLE hProcess, IN LPVOID lpv, OUT LPWSTR lpFilename, IN DWORD nSize)
+{
+    g_pRtlSetLastWin32Error(ERROR_CALL_NOT_IMPLEMENTED);
+
+    return 0;
+}
+
+// stubGetModuleFileNameExA
+// ------------------------
+// Implemented: 100%
+
+DWORD WINAPI stubGetModuleFileNameExA(IN HANDLE hProcess, IN HMODULE hModule, OUT LPSTR lpFilename, IN DWORD nSize)
+{
+    g_pRtlSetLastWin32Error(ERROR_CALL_NOT_IMPLEMENTED);
+
+    return 0;
+}
+
+// stubGetModuleFileNameExW
+// ------------------------
+// Implemented: 100%
+
+DWORD WINAPI stubGetModuleFileNameExW(IN HANDLE hProcess, IN HMODULE hModule, OUT LPWSTR lpFilename, IN DWORD nSize)
 {
     g_pRtlSetLastWin32Error(ERROR_CALL_NOT_IMPLEMENTED);
 
@@ -8592,6 +9604,11 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved)
             if (!g_pGetFileAttributesTransactedW)
                 g_pGetFileAttributesTransactedW = (pGetFileAttributesTransactedW) &stubGetFileAttributesTransactedW;
 
+            g_pGetFileSizeEx = (pGetFileSizeEx) GetProcAddress(hDynamicLinkLibrary, "GetFileSizeEx");
+
+            if (!g_pGetFileSizeEx)
+                g_pGetFileSizeEx = (pGetFileSizeEx) &stubGetFileSizeEx;
+
             g_pGetFinalPathNameByHandleA = (pGetFinalPathNameByHandleA) GetProcAddress(hDynamicLinkLibrary, "GetFinalPathNameByHandleA");
 
             if (!g_pGetFinalPathNameByHandleA)
@@ -8702,11 +9719,46 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved)
             if (!g_pWow64RevertWow64FsRedirection)
                 g_pWow64RevertWow64FsRedirection = (pWow64RevertWow64FsRedirection) &stubWow64RevertWow64FsRedirection;
 
+            hDynamicLinkLibrary = GetModuleHandle(TEXT("PSAPI.DLL"));
+
+            if (!hDynamicLinkLibrary)
+            {
+                g_hModulePSAPI = LoadSystemLibrary(TEXT("PSAPI.DLL"));
+
+                hDynamicLinkLibrary = g_hModulePSAPI;
+            }
+            else g_hModulePSAPI = NULL;
+
+            g_pGetMappedFileNameA = (pGetMappedFileNameA) GetProcAddress(hDynamicLinkLibrary, "GetMappedFileNameA");
+
+            if (!g_pGetMappedFileNameA)
+                g_pGetMappedFileNameA = (pGetMappedFileNameA) &stubGetMappedFileNameA;
+
+            g_pGetMappedFileNameW = (pGetMappedFileNameW) GetProcAddress(hDynamicLinkLibrary, "GetMappedFileNameW");
+
+            if (!g_pGetMappedFileNameW)
+                g_pGetMappedFileNameW = (pGetMappedFileNameW) &stubGetMappedFileNameW;
+
+            g_pGetModuleFileNameExA = (pGetModuleFileNameExA) GetProcAddress(hDynamicLinkLibrary, "GetModuleFileNameExA");
+
+            if (!g_pGetModuleFileNameExA)
+                g_pGetModuleFileNameExA = (pGetModuleFileNameExA) &stubGetModuleFileNameExA;
+
+            g_pGetModuleFileNameExW = (pGetModuleFileNameExW) GetProcAddress(hDynamicLinkLibrary, "GetModuleFileNameExW");
+
+            if (!g_pGetModuleFileNameExW)
+                g_pGetModuleFileNameExW = (pGetModuleFileNameExW) &stubGetModuleFileNameExW;
+
             break;
         }
-        case DLL_PROCESS_DETACH:
-            break;
-    }
 
+        case DLL_PROCESS_DETACH:
+        {
+            if (g_hModulePSAPI)
+                FreeLibrary(g_hModulePSAPI);
+
+            break;
+        }
+    }
     return TRUE;
 }

@@ -26,7 +26,7 @@ extern "C" {
 #include <winternl.h>
 
 #define NTFSLPS_MAX_FS_PATH_LENGTH 32767
-#define NTFSLPS_FS_PATH_MEMORY_LENGTH (NTFSLPS_MAX_FS_PATH_LENGTH + 1) * sizeof(WCHAR)
+#define NTFSLPS_FS_PATH_MEMORY_LENGTH (NTFSLPS_MAX_FS_PATH_LENGTH + 1) * sizeof(TCHAR)
 
 #define FS_PATH_MEMORY_LENGTH NTFSLPS_FS_PATH_MEMORY_LENGTH
 #define MAX_FS_PATH_LENGTH NTFSLPS_MAX_FS_PATH_LENGTH
@@ -92,6 +92,7 @@ NTFSLPSAPI UINT WINAPI NTFSLPS_DeleteFolderA(IN LPCSTR lpPathName);
 NTFSLPSAPI UINT WINAPI NTFSLPS_DeleteFolderW(IN LPCWSTR lpPathName);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_DumpToFileA(IN LPCSTR lpFileName, IN LPVOID lpMemory, IN UINT nLength, OUT LPUINT lpNumberOfBytesProcessed);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_DumpToFileW(IN LPCWSTR lpFileName, IN LPVOID lpMemory, IN UINT nLength, OUT LPUINT lpNumberOfBytesProcessed);
+NTFSLPSAPI BOOL WINAPI NTFSLPS_FindClose(IN OUT HANDLE hFindFile);
 NTFSLPSAPI HANDLE WINAPI NTFSLPS_FindFirstFileA(IN LPCSTR lpFileName, OUT LPWIN32_FIND_DATAA lpFindFileData);
 NTFSLPSAPI HANDLE WINAPI NTFSLPS_FindFirstFileExA(IN LPCSTR lpFileName, IN FINDEX_INFO_LEVELS fInfoLevelId, OUT LPWIN32_FIND_DATAA lpFindFileData, IN FINDEX_SEARCH_OPS fSearchOp, IN LPVOID lpSearchFilter, IN DWORD dwAdditionalFlags);
 NTFSLPSAPI HANDLE WINAPI NTFSLPS_FindFirstFileExW(IN LPCWSTR lpFileName, IN FINDEX_INFO_LEVELS fInfoLevelId, OUT LPWIN32_FIND_DATAW lpFindFileData, IN FINDEX_SEARCH_OPS fSearchOp, IN LPVOID lpSearchFilter, IN DWORD dwAdditionalFlags);
@@ -124,8 +125,7 @@ NTFSLPSAPI BOOL WINAPI NTFSLPS_GetFileAttributesExW(IN LPCWSTR lpFileName, IN GE
 NTFSLPSAPI BOOL WINAPI NTFSLPS_GetFileAttributesTransactedA(IN LPCSTR lpFileName, IN GET_FILEEX_INFO_LEVELS fInfoLevelId, OUT LPVOID lpFileInformation, IN HANDLE hTransaction);
 NTFSLPSAPI BOOL WINAPI NTFSLPS_GetFileAttributesTransactedW(IN LPCWSTR lpFileName, IN GET_FILEEX_INFO_LEVELS fInfoLevelId, OUT LPVOID lpFileInformation, IN HANDLE hTransaction);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_GetFileAttributesW(IN LPCWSTR lpFileName);
-NTFSLPSAPI DWORD WINAPI NTFSLPS_GetFileSystemObjectAttributesA(IN LPCSTR lpObjectPath);
-NTFSLPSAPI DWORD WINAPI NTFSLPS_GetFileSystemObjectAttributesW(IN LPCWSTR lpObjectPath);
+NTFSLPSAPI BOOL WINAPI NTFSLPS_GetFileSizeEx(IN HANDLE hFile, OUT PLARGE_INTEGER lpFileSize);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_GetFinalPathNameByHandleA(IN HANDLE hFile, OUT LPSTR lpszFilePath, IN DWORD cchFilePath, IN DWORD dwFlags);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_GetFinalPathNameByHandleW(IN HANDLE hFile, OUT LPWSTR lpszFilePath, IN DWORD cchFilePath, IN DWORD dwFlags);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN DWORD nBufferLength);
@@ -138,8 +138,18 @@ NTFSLPSAPI DWORD WINAPI NTFSLPS_GetLongPathNameA(IN LPCSTR lpszShortPath, OUT LP
 NTFSLPSAPI DWORD WINAPI NTFSLPS_GetLongPathNameTransactedA(IN LPCSTR lpszShortPath, OUT LPSTR lpszLongPath, IN DWORD cchBuffer, IN HANDLE hTransaction);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_GetLongPathNameTransactedW(IN LPCWSTR lpszShortPath, OUT LPWSTR lpszLongPath, IN DWORD cchBuffer, IN HANDLE hTransaction);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_GetLongPathNameW(IN LPCWSTR lpszShortPath, OUT LPWSTR lpszLongPath, IN DWORD cchBuffer);
+NTFSLPSAPI DWORD WINAPI NTFSLPS_GetMappedFileNameA(IN HANDLE hProcess, IN LPVOID lpv, OUT LPSTR lpFilename, IN DWORD nSize);
+NTFSLPSAPI DWORD WINAPI NTFSLPS_GetMappedFileNameW(IN HANDLE hProcess, IN LPVOID lpv, OUT LPWSTR lpFilename, IN DWORD nSize);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_GetModuleFileNameA(IN HMODULE hModule, OUT LPSTR lpFilename, IN DWORD nSize);
+NTFSLPSAPI DWORD WINAPI NTFSLPS_GetModuleFileNameExA(IN HANDLE hProcess, IN HMODULE hModule, OUT LPSTR lpFilename, IN DWORD nSize);
+NTFSLPSAPI DWORD WINAPI NTFSLPS_GetModuleFileNameExW(IN HANDLE hProcess, IN HMODULE hModule, OUT LPWSTR lpFilename, IN DWORD nSize);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_GetModuleFileNameW(IN HMODULE hModule, OUT LPWSTR lpFilename, IN DWORD nSize);
+NTFSLPSAPI UINT WINAPI NTFSLPS_GetSystemDirectoryA(OUT LPSTR lpBuffer, IN UINT uSize);
+NTFSLPSAPI UINT WINAPI NTFSLPS_GetSystemDirectoryW(OUT LPWSTR lpBuffer, IN UINT uSize);
+NTFSLPSAPI UINT WINAPI NTFSLPS_GetSystemWindowsDirectoryA(OUT LPSTR lpBuffer, IN UINT uSize);
+NTFSLPSAPI UINT WINAPI NTFSLPS_GetSystemWindowsDirectoryW(OUT LPWSTR lpBuffer, IN UINT uSize);
+NTFSLPSAPI UINT WINAPI NTFSLPS_GetWindowsDirectoryA(OUT LPSTR lpBuffer, IN UINT uSize);
+NTFSLPSAPI UINT WINAPI NTFSLPS_GetWindowsDirectoryW(OUT LPWSTR lpBuffer, IN UINT uSize);
 NTFSLPSAPI BOOL WINAPI NTFSLPS_IsPathExistA(LPCSTR lpObjectPath);
 NTFSLPSAPI BOOL WINAPI NTFSLPS_IsPathExistW(LPCWSTR lpObjectPath);
 NTFSLPSAPI BOOL WINAPI NTFSLPS_MoveFileA(IN LPCSTR lpExistingFileName, IN LPCSTR lpNewFileName);
@@ -157,6 +167,8 @@ NTFSLPSAPI BOOL WINAPI NTFSLPS_RemoveDirectoryTransactedA(IN LPCSTR lpPathName, 
 NTFSLPSAPI BOOL WINAPI NTFSLPS_RemoveDirectoryTransactedW(IN LPCWSTR lpPathName, IN HANDLE hTransaction);
 NTFSLPSAPI BOOL WINAPI NTFSLPS_RemoveDirectoryW(IN LPCWSTR lpPathName);
 NTFSLPSAPI BOOL WINAPI NTFSLPS_ReplaceFileA(IN LPCSTR lpReplacedFileName, IN LPCSTR lpReplacementFileName, IN LPCSTR lpBackupFileName, IN DWORD dwReplaceFlags, IN LPVOID lpExclude, IN LPVOID lpReserved);
+NTFSLPSAPI DWORD WINAPI NTFSLPS_ReplaceFilePathExtensionA(IN OUT LPSTR lpObjectPath, IN DWORD nSize, LPCSTR lpExtension);
+NTFSLPSAPI DWORD WINAPI NTFSLPS_ReplaceFilePathExtensionW(IN OUT LPWSTR lpObjectPath, IN DWORD nSize, LPCWSTR lpExtension);
 NTFSLPSAPI BOOL WINAPI NTFSLPS_ReplaceFileW(IN LPCWSTR lpReplacedFileName, IN LPCWSTR lpReplacementFileName, IN LPCWSTR lpBackupFileName, IN DWORD dwReplaceFlags, IN LPVOID lpExclude, IN LPVOID lpReserved);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_SearchPathA(IN LPCSTR lpPath, IN LPCSTR lpFileName, IN LPCSTR lpExtension, IN DWORD nBufferLength, OUT LPSTR lpBuffer, OUT LPSTR *lpFilePart);
 NTFSLPSAPI DWORD WINAPI NTFSLPS_SearchPathW(IN LPCWSTR lpPath, IN LPCWSTR lpFileName, IN LPCWSTR lpExtension, IN DWORD nBufferLength, OUT LPWSTR lpBuffer, OUT LPWSTR *lpFilePart);
@@ -188,6 +200,7 @@ NTFSLPSAPI int __cdecl NTFSLPS_wrmdir(const wchar_t *path);
 #define NTFSLPS_CreateDirectoryTransacted NTFSLPS_CreateDirectoryTransactedW
 #define NTFSLPS_CreateDirectoryEx NTFSLPS_CreateDirectoryExW
 #define NTFSLPS_CreateDirectory NTFSLPS_CreateDirectoryW
+#define NTFSLPS_CreateFile NTFSLPS_CreateFileW
 #define NTFSLPS_CreateFileBackup NTFSLPS_CreateFileBackupW
 #define NTFSLPS_CreateFileBackupEx NTFSLPS_CreateFileBackupExW
 #define NTFSLPS_CreateFileTransacted NTFSLPS_CreateFileTransactedW
@@ -211,6 +224,7 @@ NTFSLPSAPI int __cdecl NTFSLPS_wrmdir(const wchar_t *path);
 #define NTFSLPS_FindNextStream NTFSLPS_FindNextStreamW
 #define NTFSLPS_GetCompressedFileSize NTFSLPS_GetCompressedFileSizeW
 #define NTFSLPS_GetCompressedFileSizeTransacted NTFSLPS_GetCompressedFileSizeTransactedW
+#define NTFSLPS_GetCurrentDirectory NTFSLPS_GetCurrentDirectoryW
 #define NTFSLPS_GetFileAttributes NTFSLPS_GetFileAttributesW
 #define NTFSLPS_GetFileAttributesEx NTFSLPS_GetFileAttributesExW
 #define NTFSLPS_GetFileAttributesTransacted NTFSLPS_GetFileAttributesTransactedW
@@ -221,7 +235,12 @@ NTFSLPSAPI int __cdecl NTFSLPS_wrmdir(const wchar_t *path);
 #define NTFSLPS_GetFullPathNameTransacted NTFSLPS_GetFullPathNameTransactedW
 #define NTFSLPS_GetLongPathName NTFSLPS_GetLongPathNameW
 #define NTFSLPS_GetLongPathNameTransacted NTFSLPS_GetLongPathNameTransactedW
+#define NTFSLPS_GetMappedFileName NTFSLPS_GetMappedFileNameW
 #define NTFSLPS_GetModuleFileName NTFSLPS_GetModuleFileNameW
+#define NTFSLPS_GetModuleFileNameEx NTFSLPS_GetModuleFileNameExW
+#define NTFSLPS_GetSystemDirectory NTFSLPS_GetSystemDirectoryW
+#define NTFSLPS_GetSystemWindowsDirectory NTFSLPS_GetSystemWindowsDirectoryW
+#define NTFSLPS_GetWindowsDirectory NTFSLPS_GetWindowsDirectoryW
 #define NTFSLPS_IsPathExist NTFSLPS_IsPathExistW
 #define NTFSLPS_MoveFile NTFSLPS_MoveFileW
 #define NTFSLPS_MoveFileEx NTFSLPS_MoveFileExW
@@ -231,6 +250,7 @@ NTFSLPSAPI int __cdecl NTFSLPS_wrmdir(const wchar_t *path);
 #define NTFSLPS_RemoveDirectory NTFSLPS_RemoveDirectoryW
 #define NTFSLPS_RemoveDirectoryTransacted NTFSLPS_RemoveDirectoryTransactedW
 #define NTFSLPS_ReplaceFile NTFSLPS_ReplaceFileW
+#define NTFSLPS_ReplaceFilePathExtension NTFSLPS_ReplaceFilePathExtensionW
 #define NTFSLPS_SearchPath NTFSLPS_SearchPathW
 #define NTFSLPS_SetCurrentDirectory NTFSLPS_SetCurrentDirectoryW
 #define NTFSLPS_SetFileAttributes NTFSLPS_SetFileAttributesW
@@ -242,6 +262,7 @@ NTFSLPSAPI int __cdecl NTFSLPS_wrmdir(const wchar_t *path);
 #define NTFSLPS_CreateDirectory NTFSLPS_CreateDirectoryA
 #define NTFSLPS_CreateDirectoryEx NTFSLPS_CreateDirectoryExA
 #define NTFSLPS_CreateDirectoryTransacted NTFSLPS_CreateDirectoryTransactedA
+#define NTFSLPS_CreateFile NTFSLPS_CreateFileA
 #define NTFSLPS_CreateFileBackup NTFSLPS_CreateFileBackupA
 #define NTFSLPS_CreateFileBackupEx NTFSLPS_CreateFileBackupExA
 #define NTFSLPS_CreateFileTransacted NTFSLPS_CreateFileTransactedA
@@ -265,6 +286,7 @@ NTFSLPSAPI int __cdecl NTFSLPS_wrmdir(const wchar_t *path);
 #define NTFSLPS_FindNextStream NTFSLPS_FindNextStreamA
 #define NTFSLPS_GetCompressedFileSize NTFSLPS_GetCompressedFileSizeA
 #define NTFSLPS_GetCompressedFileSizeTransacted NTFSLPS_GetCompressedFileSizeTransactedA
+#define NTFSLPS_GetCurrentDirectory NTFSLPS_GetCurrentDirectoryA
 #define NTFSLPS_GetFileAttributes NTFSLPS_GetFileAttributesA
 #define NTFSLPS_GetFileAttributesEx NTFSLPS_GetFileAttributesExA
 #define NTFSLPS_GetFileAttributesTransacted NTFSLPS_GetFileAttributesTransactedA
@@ -275,7 +297,12 @@ NTFSLPSAPI int __cdecl NTFSLPS_wrmdir(const wchar_t *path);
 #define NTFSLPS_GetFullPathNameTransacted NTFSLPS_GetFullPathNameTransactedA
 #define NTFSLPS_GetLongPathName NTFSLPS_GetLongPathNameA
 #define NTFSLPS_GetLongPathNameTransacted NTFSLPS_GetLongPathNameTransactedA
+#define NTFSLPS_GetMappedFileName NTFSLPS_GetMappedFileNameA
 #define NTFSLPS_GetModuleFileName NTFSLPS_GetModuleFileNameA
+#define NTFSLPS_GetModuleFileNameEx NTFSLPS_GetModuleFileNameExA
+#define NTFSLPS_GetSystemDirectory NTFSLPS_GetSystemDirectoryA
+#define NTFSLPS_GetSystemWindowsDirectory NTFSLPS_GetSystemWindowsDirectoryA
+#define NTFSLPS_GetWindowsDirectory NTFSLPS_GetWindowsDirectoryA
 #define NTFSLPS_IsPathExist NTFSLPS_IsPathExistA
 #define NTFSLPS_MoveFile NTFSLPS_MoveFileA
 #define NTFSLPS_MoveFileEx NTFSLPS_MoveFileExA
@@ -285,6 +312,7 @@ NTFSLPSAPI int __cdecl NTFSLPS_wrmdir(const wchar_t *path);
 #define NTFSLPS_RemoveDirectory NTFSLPS_RemoveDirectoryA
 #define NTFSLPS_RemoveDirectoryTransacted NTFSLPS_RemoveDirectoryTransactedA
 #define NTFSLPS_ReplaceFile NTFSLPS_ReplaceFileA
+#define NTFSLPS_ReplaceFilePathExtension NTFSLPS_ReplaceFilePathExtensionA
 #define NTFSLPS_SearchPath NTFSLPS_SearchPathA
 #define NTFSLPS_SetCurrentDirectory NTFSLPS_SetCurrentDirectoryA
 #define NTFSLPS_SetFileAttributes NTFSLPS_SetFileAttributesA
