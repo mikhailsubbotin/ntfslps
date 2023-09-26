@@ -40,9 +40,6 @@ typedef NTSTATUS (NTAPI *pRtlOemStringToUnicodeString)(OUT PUNICODE_STRING Desti
 typedef NTSTATUS (NTAPI *pRtlUnicodeStringToAnsiString)(OUT PANSI_STRING DestinationString, IN PCUNICODE_STRING SourceString, IN BOOL AllocateDestinationString);
 typedef NTSTATUS (NTAPI *pRtlUnicodeStringToOemString)(OUT POEM_STRING DestinationString, IN PCUNICODE_STRING SourceString, IN BOOL AllocateDestinationString);
 
-typedef NTSTATUS (NTAPI *pCurrentCodePageStringToUnicodeString)(OUT PUNICODE_STRING DestinationString, IN PVOID SourceString, IN BOOL AllocateDestinationString);
-typedef NTSTATUS (NTAPI *pUnicodeStringToCurrentCodePageString)(OUT PVOID DestinationString, IN PCUNICODE_STRING SourceString, IN BOOL AllocateDestinationString);
-
 typedef HRESULT (WINAPI *pCopyFile2)(IN PCWSTR pwszExistingFileName, IN PCWSTR pwszNewFileName, IN COPYFILE2_EXTENDED_PARAMETERS *pExtendedParameters);
 typedef BOOL (WINAPI *pCopyFileTransactedA)(IN LPCSTR lpExistingFileName, IN LPCSTR lpNewFileName, IN LPPROGRESS_ROUTINE lpProgressRoutine, IN LPVOID lpData, IN LPBOOL pbCancel, IN DWORD dwCopyFlags, IN HANDLE hTransaction);
 typedef BOOL (WINAPI *pCopyFileTransactedW)(IN LPCWSTR lpExistingFileName, IN LPCWSTR lpNewFileName, IN LPPROGRESS_ROUTINE lpProgressRoutine, IN LPVOID lpData, IN LPBOOL pbCancel, IN DWORD dwCopyFlags, IN HANDLE hTransaction);

@@ -637,7 +637,7 @@ DWORD WINAPI GetFullPathAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD
                         }
                         else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
                     }
-                    else goto loc_SetInsufficientBufferErrorCode;
+                    else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
                 }
                 else
                 {
@@ -742,7 +742,7 @@ DWORD WINAPI GetFullPathAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD
                 }
                 else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else goto loc_SetInsufficientBufferErrorCode;
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
         }
         else
         {
@@ -851,12 +851,7 @@ DWORD WINAPI GetFullPathAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWORD
                 }
                 else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else
-            {
-                loc_SetInsufficientBufferErrorCode:
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-            }
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
         }
         else
         {
@@ -1096,7 +1091,7 @@ DWORD WINAPI GetFullPathExAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
                         }
                         else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
                     }
-                    else goto loc_SetInsufficientBufferErrorCode;
+                    else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
                 }
                 else
                 {
@@ -1201,7 +1196,7 @@ DWORD WINAPI GetFullPathExAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
                 }
                 else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else goto loc_SetInsufficientBufferErrorCode;
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
         }
         else
         {
@@ -1310,12 +1305,7 @@ DWORD WINAPI GetFullPathExAW(IN LPCSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
                 }
                 else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else
-            {
-                loc_SetInsufficientBufferErrorCode:
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-            }
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
         }
         else
         {
@@ -1530,6 +1520,8 @@ DWORD WINAPI GetFullPathExW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
                             lpBuffer[2] = 0;
 
                             dwFilePathLength--;
+
+                            g_pRtlSetLastWin32Error(NO_ERROR);
                         }
                         else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
                     }
@@ -1620,7 +1612,7 @@ DWORD WINAPI GetFullPathExW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
                 }
                 else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else goto loc_SetInsufficientBufferErrorCode;
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
         }
         else
         {
@@ -1652,12 +1644,12 @@ DWORD WINAPI GetFullPathExW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
 
                                 Win32ErrorCode = NO_ERROR;
                             }
-                            else goto loc_SetInsufficientBufferErrorCode;
+                            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
                         }
                     }
                     else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
                 }
-                else goto loc_SetInsufficientBufferErrorCode;
+                else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
             }
         }
     }
@@ -1684,12 +1676,7 @@ DWORD WINAPI GetFullPathExW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
                 }
                 else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else
-            {
-                loc_SetInsufficientBufferErrorCode:
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-            }
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
         }
         else
         {
@@ -1721,14 +1708,14 @@ DWORD WINAPI GetFullPathExW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, IN DWO
                                 {
                                     memcpy(lpBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
 
-                                    Win32ErrorCode = NO_ERROR;
+                                    g_pRtlSetLastWin32Error(NO_ERROR);
                                 }
-                                else goto loc_SetInsufficientBufferErrorCode;
+                                else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
                             }
                         }
                         else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
                     }
-                    else goto loc_SetInsufficientBufferErrorCode;
+                    else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
                 }
                 else
                 {
@@ -5607,7 +5594,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
                         }
                         else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
                     }
-                    else goto loc_SetInsufficientBufferErrorCode;
+                    else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
                 }
                 else
                 {
@@ -5782,7 +5769,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
                 }
                 else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else goto loc_SetInsufficientBufferErrorCode;
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
         }
         else
         {
@@ -5961,12 +5948,7 @@ DWORD WINAPI NTFSLPS_GetFullPathA(IN LPCSTR lpObjectPath, OUT LPSTR lpBuffer, IN
                 }
                 else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else
-            {
-                loc_SetInsufficientBufferErrorCode:
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-            }
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
         }
         else
         {
@@ -6415,6 +6397,8 @@ DWORD WINAPI NTFSLPS_GetFullPathW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, 
                             lpBuffer[2] = 0;
 
                             dwFilePathLength--;
+
+                            g_pRtlSetLastWin32Error(NO_ERROR);
                         }
                         else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
                     }
@@ -6505,7 +6489,7 @@ DWORD WINAPI NTFSLPS_GetFullPathW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, 
                 }
                 else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else goto loc_SetInsufficientBufferErrorCode;
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
         }
         else
         {
@@ -6535,14 +6519,14 @@ DWORD WINAPI NTFSLPS_GetFullPathW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, 
                             {
                                 memcpy(lpBuffer, L"\\\\?\\UNC", 7 * sizeof(WCHAR));
 
-                                Win32ErrorCode = NO_ERROR;
+                                g_pRtlSetLastWin32Error(NO_ERROR);
                             }
-                            else goto loc_SetInsufficientBufferErrorCode;
+                            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
                         }
                     }
                     else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
                 }
-                else goto loc_SetInsufficientBufferErrorCode;
+                else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
             }
         }
     }
@@ -6569,12 +6553,7 @@ DWORD WINAPI NTFSLPS_GetFullPathW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, 
                 }
                 else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
             }
-            else
-            {
-                loc_SetInsufficientBufferErrorCode:
-
-                g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
-            }
+            else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
         }
         else
         {
@@ -6606,14 +6585,14 @@ DWORD WINAPI NTFSLPS_GetFullPathW(IN LPCWSTR lpObjectPath, OUT LPWSTR lpBuffer, 
                                 {
                                     memcpy(lpBuffer, L"\\\\?\\", 4 * sizeof(WCHAR));
 
-                                    Win32ErrorCode = NO_ERROR;
+                                    g_pRtlSetLastWin32Error(NO_ERROR);
                                 }
-                                else goto loc_SetInsufficientBufferErrorCode;
+                                else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
                             }
                         }
                         else g_pRtlSetLastWin32Error(ERROR_INVALID_USER_BUFFER);
                     }
-                    else goto loc_SetInsufficientBufferErrorCode;
+                    else g_pRtlSetLastWin32Error(ERROR_INSUFFICIENT_BUFFER);
                 }
                 else
                 {
