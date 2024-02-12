@@ -10,134 +10,142 @@
 /* | ##    ##    ##    ##       ######## ######## ##       ######## | */
 /* +================================================================+ */
 ```
-| Function | Tested
-| - | -
-| NTFSLPS_AreFileApisANSI | Yes
-| NTFSLPS_CopyFile2 | Yes
-| NTFSLPS_CopyFileA | Yes
-| NTFSLPS_CopyFileExA | Yes
-| NTFSLPS_CopyFileExW | Yes
-| NTFSLPS_CopyFileTransactedA | Yes
-| NTFSLPS_CopyFileTransactedW | Yes
-| NTFSLPS_CopyFileW | Yes
-| NTFSLPS_CreateDirectoryA | Yes
-| NTFSLPS_CreateDirectoryExA | Yes
-| NTFSLPS_CreateDirectoryExW | Yes
-| NTFSLPS_CreateDirectoryTransactedA | Yes
-| NTFSLPS_CreateDirectoryTransactedW | Yes
-| NTFSLPS_CreateDirectoryW | Yes
-| NTFSLPS_CreateFile2 | Yes
-| NTFSLPS_CreateFileA | Yes
-| NTFSLPS_CreateFileBackupA | Yes
-| NTFSLPS_CreateFileBackupExA | Yes
-| NTFSLPS_CreateFileBackupExW | Yes
-| NTFSLPS_CreateFileBackupW | Yes
-| NTFSLPS_CreateFileTransactedA | Yes
-| NTFSLPS_CreateFileTransactedW | Yes
-| NTFSLPS_CreateFileW | Yes
-| NTFSLPS_CreateFolderA | Yes
-| NTFSLPS_CreateFolderW | Yes
-| NTFSLPS_CreateHardLinkA | Yes
-| NTFSLPS_CreateHardLinkTransactedA | Yes
-| NTFSLPS_CreateHardLinkTransactedW | Yes
-| NTFSLPS_CreateHardLinkW | Yes
-| NTFSLPS_CreateSymbolicLinkA | Yes
-| NTFSLPS_CreateSymbolicLinkTransactedA | Yes
-| NTFSLPS_CreateSymbolicLinkTransactedW | Yes
-| NTFSLPS_CreateSymbolicLinkW | Yes
-| NTFSLPS_DeleteFileA | Yes
-| NTFSLPS_DeleteFileTransactedA | Yes
-| NTFSLPS_DeleteFileTransactedW | Yes
-| NTFSLPS_DeleteFileW | Yes
-| NTFSLPS_DeleteFolderA | Yes
-| NTFSLPS_DeleteFolderW | Yes
-| NTFSLPS_DumpToFileA | Yes
-| NTFSLPS_DumpToFileW | Yes
-| NTFSLPS_FindFirstFileA | Yes
-| NTFSLPS_FindFirstFileExA | Yes
-| NTFSLPS_FindFirstFileExW | Yes
-| NTFSLPS_FindFirstFileNameA | Yes
-| NTFSLPS_FindFirstFileNameTransactedA | Yes
-| NTFSLPS_FindFirstFileNameTransactedW | Yes
-| NTFSLPS_FindFirstFileNameW | Yes
-| NTFSLPS_FindFirstFileTransactedA | Yes
-| NTFSLPS_FindFirstFileTransactedW | Yes
-| NTFSLPS_FindFirstFileW | Yes
-| NTFSLPS_FindFirstStreamA | Yes
-| NTFSLPS_FindFirstStreamTransactedA | Yes
-| NTFSLPS_FindFirstStreamTransactedW | Yes
-| NTFSLPS_FindFirstStreamW | Yes
-| NTFSLPS_FindNextFileA | Yes
-| NTFSLPS_FindNextFileNameA | Yes
-| NTFSLPS_FindNextFileNameW | Yes
-| NTFSLPS_FindNextFileW | Yes
-| NTFSLPS_FindNextStreamA | Yes
-| NTFSLPS_FindNextStreamW | Yes
-| NTFSLPS_GetCompressedFileSizeA | Yes
-| NTFSLPS_GetCompressedFileSizeTransactedA | Yes
-| NTFSLPS_GetCompressedFileSizeTransactedW | Yes
-| NTFSLPS_GetCompressedFileSizeW | Yes
-| NTFSLPS_GetCurrentDirectoryA | Yes
-| NTFSLPS_GetCurrentDirectoryW | Yes
-| NTFSLPS_GetFileAttributesA | Yes
-| NTFSLPS_GetFileAttributesExA | Yes
-| NTFSLPS_GetFileAttributesExW | Yes
-| NTFSLPS_GetFileAttributesTransactedA | Yes
-| NTFSLPS_GetFileAttributesTransactedW | Yes
-| NTFSLPS_GetFileAttributesW | Yes
-| NTFSLPS_GetFinalPathNameByHandleA | Yes
-| NTFSLPS_GetFinalPathNameByHandleW | Yes
-| NTFSLPS_GetFullPathA | Yes
-| NTFSLPS_GetFullPathNameA | Yes
-| NTFSLPS_GetFullPathNameTransactedA | Yes
-| NTFSLPS_GetFullPathNameTransactedW | Yes
-| NTFSLPS_GetFullPathNameW | Yes
-| NTFSLPS_GetFullPathW | Yes
-| NTFSLPS_GetLongPathNameA | Yes
-| NTFSLPS_GetLongPathNameTransactedA | Yes
-| NTFSLPS_GetLongPathNameTransactedW | Yes
-| NTFSLPS_GetLongPathNameW | Yes
-| NTFSLPS_GetModuleFileNameA | Yes
-| NTFSLPS_GetModuleFileNameW | Yes
-| NTFSLPS_IsPathExistA | Yes
-| NTFSLPS_IsPathExistW | Yes
-| NTFSLPS_MoveFileA | Yes
-| NTFSLPS_MoveFileExA | Yes
-| NTFSLPS_MoveFileExW | Yes
-| NTFSLPS_MoveFileTransactedA | Yes
-| NTFSLPS_MoveFileTransactedW | Yes
-| NTFSLPS_MoveFileW | Yes
-| NTFSLPS_MoveFileWithProgressA | Yes
-| NTFSLPS_MoveFileWithProgressW | Yes
-| NTFSLPS_NewFileA | Yes
-| NTFSLPS_NewFileW | Yes
-| NTFSLPS_RemoveDirectoryA | Yes
-| NTFSLPS_RemoveDirectoryTransactedA | Yes
-| NTFSLPS_RemoveDirectoryTransactedW | Yes
-| NTFSLPS_RemoveDirectoryW | Yes
-| NTFSLPS_ReplaceFileA | Yes
-| NTFSLPS_ReplaceFileW | Yes
-| NTFSLPS_SearchPathA | Yes
-| NTFSLPS_SearchPathW | Yes
-| NTFSLPS_SetCurrentDirectoryA | Yes
-| NTFSLPS_SetCurrentDirectoryW | Yes
-| NTFSLPS_SetFileApisToANSI | Yes
-| NTFSLPS_SetFileApisToOEM | Yes
-| NTFSLPS_SetFileAttributesA | Yes
-| NTFSLPS_SetFileAttributesTransactedA | Yes
-| NTFSLPS_SetFileAttributesTransactedW | Yes
-| NTFSLPS_SetFileAttributesW | Yes
-| NTFSLPS_SetSearchPathMode | Yes
-| NTFSLPS_Wow64DisableWow64FsRedirection | Yes
-| NTFSLPS_Wow64EnableWow64FsRedirection | Yes
-| NTFSLPS_Wow64RevertWow64FsRedirection | Yes
-| NTFSLPS_lcreat | Yes
-| NTFSLPS_lopen | Yes
-| NTFSLPS_mkdir | Yes
-| NTFSLPS_remove | Yes
-| NTFSLPS_rmdir | Yes
-| NTFSLPS_wmkdir | Yes
-| NTFSLPS_wremove | Yes
-| NTFSLPS_wrmdir | Yes
+| Function | Implemented | Tested
+| - | - | -
+| NTFSLPS_AddPathEndingBackslashA | Yes (100%) | Yes
+| NTFSLPS_AddPathEndingBackslashW | Yes (100%) | Yes
+| NTFSLPS_AppendPathComponentA | Yes (100%) | No
+| NTFSLPS_AppendPathComponentW | Yes (100%) | No
+| NTFSLPS_CopyFile2 | Yes (100%) | Yes
+| NTFSLPS_CopyFileA | Yes (100%) | Yes
+| NTFSLPS_CopyFileExA | Yes (100%) | Yes
+| NTFSLPS_CopyFileExW | Yes (100%) | Yes
+| NTFSLPS_CopyFileTransactedA | Yes (100%) | Yes
+| NTFSLPS_CopyFileTransactedW | Yes (100%) | Yes
+| NTFSLPS_CopyFileW | Yes (100%) | Yes
+| NTFSLPS_CreateDirectoryA | Yes (100%) | Yes
+| NTFSLPS_CreateDirectoryExA | Yes (100%) | Yes
+| NTFSLPS_CreateDirectoryExW | Yes (100%) | Yes
+| NTFSLPS_CreateDirectoryTransactedA | Yes (100%) | Yes
+| NTFSLPS_CreateDirectoryTransactedW | Yes (100%) | Yes
+| NTFSLPS_CreateDirectoryW | Yes (100%) | Yes
+| NTFSLPS_CreateFile2 | Yes (100%) | Yes
+| NTFSLPS_CreateFileA | Yes (100%) | Yes
+| NTFSLPS_CreateFileBackupA | Yes (100%) | Yes
+| NTFSLPS_CreateFileBackupExA | Yes (100%) | Yes
+| NTFSLPS_CreateFileBackupExW | Yes (100%) | Yes
+| NTFSLPS_CreateFileBackupW | Yes (100%) | Yes
+| NTFSLPS_CreateFileTransactedA | Yes (100%) | Yes
+| NTFSLPS_CreateFileTransactedW | Yes (100%) | Yes
+| NTFSLPS_CreateFileW | Yes (100%) | Yes
+| NTFSLPS_CreateFolderA | Yes (100%) | Yes
+| NTFSLPS_CreateFolderW | Yes (100%) | Yes
+| NTFSLPS_CreateHardLinkA | Yes (100%) | Yes
+| NTFSLPS_CreateHardLinkTransactedA | Yes (100%) | Yes
+| NTFSLPS_CreateHardLinkTransactedW | Yes (100%) | Yes
+| NTFSLPS_CreateHardLinkW | Yes (100%) | Yes
+| NTFSLPS_CreateSymbolicLinkA | Yes (100%) | Yes
+| NTFSLPS_CreateSymbolicLinkTransactedA | Yes (100%) | Yes
+| NTFSLPS_CreateSymbolicLinkTransactedW | Yes (100%) | Yes
+| NTFSLPS_CreateSymbolicLinkW | Yes (100%) | Yes
+| NTFSLPS_DeleteFileA | Yes (100%) | Yes
+| NTFSLPS_DeleteFileTransactedA | Yes (100%) | Yes
+| NTFSLPS_DeleteFileTransactedW | Yes (100%) | Yes
+| NTFSLPS_DeleteFileW | Yes (100%) | Yes
+| NTFSLPS_DeleteFolderA | Yes (100%) | Yes
+| NTFSLPS_DeleteFolderW | Yes (100%) | Yes
+| NTFSLPS_DumpToFileA | Yes (100%) | Yes
+| NTFSLPS_DumpToFileW | Yes (100%) | Yes
+| NTFSLPS_FindFirstFileA | Yes (100%) | Yes
+| NTFSLPS_FindFirstFileExA | Yes (100%) | Yes
+| NTFSLPS_FindFirstFileExW | Yes (100%) | Yes
+| NTFSLPS_FindFirstFileNameA | Yes (100%) | Yes
+| NTFSLPS_FindFirstFileNameTransactedA | Yes (100%) | Yes
+| NTFSLPS_FindFirstFileNameTransactedW | Yes (100%) | Yes
+| NTFSLPS_FindFirstFileNameW | Yes (100%) | Yes
+| NTFSLPS_FindFirstFileTransactedA | Yes (100%) | Yes
+| NTFSLPS_FindFirstFileTransactedW | Yes (100%) | Yes
+| NTFSLPS_FindFirstFileW | Yes (100%) | Yes
+| NTFSLPS_FindFirstStreamA | Yes (100%) | Yes
+| NTFSLPS_FindFirstStreamTransactedA | Yes (100%) | Yes
+| NTFSLPS_FindFirstStreamTransactedW | Yes (100%) | Yes
+| NTFSLPS_FindFirstStreamW | Yes (100%) | Yes
+| NTFSLPS_FindNextFileA | Yes (100%) | Yes
+| NTFSLPS_FindNextFileNameA | Yes (100%) | Yes
+| NTFSLPS_FindNextFileNameW | Yes (100%) | Yes
+| NTFSLPS_FindNextFileW | Yes (100%) | Yes
+| NTFSLPS_FindNextStreamA | Yes (100%) | Yes
+| NTFSLPS_FindNextStreamW | Yes (100%) | Yes
+| NTFSLPS_GetCompressedFileSizeA | Yes (100%) | Yes
+| NTFSLPS_GetCompressedFileSizeTransactedA | Yes (100%) | Yes
+| NTFSLPS_GetCompressedFileSizeTransactedW | Yes (100%) | Yes
+| NTFSLPS_GetCompressedFileSizeW | Yes (100%) | Yes
+| NTFSLPS_GetFileAttributesA | Yes (100%) | Yes
+| NTFSLPS_GetFileAttributesExA | Yes (100%) | Yes
+| NTFSLPS_GetFileAttributesExW | Yes (100%) | Yes
+| NTFSLPS_GetFileAttributesTransactedA | Yes (100%) | Yes
+| NTFSLPS_GetFileAttributesTransactedW | Yes (100%) | Yes
+| NTFSLPS_GetFileAttributesW | Yes (100%) | Yes
+| NTFSLPS_GetFileSizeEx | Yes (100%) | Yes
+| NTFSLPS_GetFinalPathNameByHandleA | Yes (100%) | Yes
+| NTFSLPS_GetFinalPathNameByHandleW | Yes (100%) | Yes
+| NTFSLPS_GetFullPathA | Yes (100%) | Yes
+| NTFSLPS_GetFullPathNameA | Yes (100%) | Yes
+| NTFSLPS_GetFullPathNameTransactedA | Yes (100%) | Yes
+| NTFSLPS_GetFullPathNameTransactedW | Yes (100%) | Yes
+| NTFSLPS_GetFullPathNameW | Yes (100%) | Yes
+| NTFSLPS_GetFullPathW | Yes (100%) | Yes
+| NTFSLPS_GetLongPathNameA | Yes (100%) | Yes
+| NTFSLPS_GetLongPathNameTransactedA | Yes (100%) | Yes
+| NTFSLPS_GetLongPathNameTransactedW | Yes (100%) | Yes
+| NTFSLPS_GetLongPathNameW | Yes (100%) | Yes
+| NTFSLPS_GetMappedFileNameA | Yes (100%) | Yes
+| NTFSLPS_GetMappedFileNameW | Yes (100%) | Yes
+| NTFSLPS_GetModuleFileNameA | Yes (100%) | Yes
+| NTFSLPS_GetModuleFileNameExA | Yes (100%) | Yes
+| NTFSLPS_GetModuleFileNameExW | Yes (100%) | Yes
+| NTFSLPS_GetModuleFileNameW | Yes (100%) | Yes
+| NTFSLPS_IsPathExistA | Yes (100%) | Yes
+| NTFSLPS_IsPathExistW | Yes (100%) | Yes
+| NTFSLPS_MoveFileA | Yes (100%) | Yes
+| NTFSLPS_MoveFileExA | Yes (100%) | Yes
+| NTFSLPS_MoveFileExW | Yes (100%) | Yes
+| NTFSLPS_MoveFileTransactedA | Yes (100%) | Yes
+| NTFSLPS_MoveFileTransactedW | Yes (100%) | Yes
+| NTFSLPS_MoveFileW | Yes (100%) | Yes
+| NTFSLPS_MoveFileWithProgressA | Yes (100%) | Yes
+| NTFSLPS_MoveFileWithProgressW | Yes (100%) | Yes
+| NTFSLPS_NewFileA | Yes (100%) | Yes
+| NTFSLPS_NewFileW | Yes (100%) | Yes
+| NTFSLPS_RemoveDirectoryA | Yes (100%) | Yes
+| NTFSLPS_RemoveDirectoryTransactedA | Yes (100%) | Yes
+| NTFSLPS_RemoveDirectoryTransactedW | Yes (100%) | Yes
+| NTFSLPS_RemoveDirectoryW | Yes (100%) | Yes
+| NTFSLPS_RemovePathEndingSlashA | Yes (100%) | Yes
+| NTFSLPS_RemovePathEndingSlashW | Yes (100%) | Yes
+| NTFSLPS_ReplaceFileA | Yes (100%) | Yes
+| NTFSLPS_ReplaceFilePathExtensionA | Yes (100%) | Yes
+| NTFSLPS_ReplaceFilePathExtensionW | Yes (100%) | Yes
+| NTFSLPS_ReplaceFileW | Yes (100%) | Yes
+| NTFSLPS_SearchPathA | Yes (100%) | Yes
+| NTFSLPS_SearchPathW | Yes (100%) | Yes
+| NTFSLPS_SetCurrentDirectoryA | Yes (100%) | Yes
+| NTFSLPS_SetCurrentDirectoryW | Yes (100%) | Yes
+| NTFSLPS_SetFileAttributesA | Yes (100%) | Yes
+| NTFSLPS_SetFileAttributesTransactedA | Yes (100%) | Yes
+| NTFSLPS_SetFileAttributesTransactedW | Yes (100%) | Yes
+| NTFSLPS_SetFileAttributesW | Yes (100%) | Yes
+| NTFSLPS_SetSearchPathMode | Yes (100%) | Yes
+| NTFSLPS_Wow64DisableWow64FsRedirection | Yes (100%) | Yes
+| NTFSLPS_Wow64EnableWow64FsRedirection | Yes (100%) | Yes
+| NTFSLPS_Wow64RevertWow64FsRedirection | Yes (100%) | Yes
+| NTFSLPS_lcreat | Yes (100%) | Yes
+| NTFSLPS_lopen | Yes (100%) | Yes
+| NTFSLPS_mkdir | Yes (100%) | Yes
+| NTFSLPS_remove | Yes (100%) | Yes
+| NTFSLPS_rmdir | Yes (100%) | Yes
+| NTFSLPS_wmkdir | Yes (100%) | Yes
+| NTFSLPS_wremove | Yes (100%) | Yes
+| NTFSLPS_wrmdir | Yes (100%) | Yes
 ---
 © [Mikhail Subbotin](http://github.com/mikhailsubbotin)

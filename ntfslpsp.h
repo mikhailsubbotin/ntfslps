@@ -14,6 +14,7 @@
 #define __NTFSLPSP_H__
 
 #include <errno.h>
+#include <tchar.h>
 #include "ntfslps.h"
 #include "ntfslpsc.h"
 
@@ -56,19 +57,13 @@ typedef BOOL (WINAPI *pCreateSymbolicLinkA)(IN LPCSTR lpSymlinkFileName, IN LPCS
 typedef BOOL (WINAPI *pCreateSymbolicLinkW)(IN LPCWSTR lpSymlinkFileName, IN LPCWSTR lpTargetFileName, IN DWORD dwFlags);
 typedef BOOL (WINAPI *pDeleteFileTransactedA)(IN LPCSTR lpFileName, IN HANDLE hTransaction);
 typedef BOOL (WINAPI *pDeleteFileTransactedW)(IN LPCWSTR lpFileName, IN HANDLE hTransaction);
-typedef HANDLE (WINAPI *pFindFirstFileNameA)(IN LPCSTR lpFileName, IN DWORD dwFlags, OUT LPDWORD StringLength, OUT PSTR LinkName);
-typedef HANDLE (WINAPI *pFindFirstFileNameTransactedA)(IN LPCSTR lpFileName, IN DWORD dwFlags, OUT LPDWORD StringLength, OUT PSTR LinkName, IN HANDLE hTransaction);
 typedef HANDLE (WINAPI *pFindFirstFileNameTransactedW)(IN LPCWSTR lpFileName, IN DWORD dwFlags, OUT LPDWORD StringLength, OUT PWSTR LinkName, IN HANDLE hTransaction);
 typedef HANDLE (WINAPI *pFindFirstFileNameW)(IN LPCWSTR lpFileName, IN DWORD dwFlags, OUT LPDWORD StringLength, OUT PWSTR LinkName);
 typedef HANDLE (WINAPI *pFindFirstFileTransactedA)(IN LPCSTR lpFileName, IN FINDEX_INFO_LEVELS fInfoLevelId, OUT LPWIN32_FIND_DATAA lpFindFileData, IN FINDEX_SEARCH_OPS fSearchOp, IN LPVOID lpSearchFilter, IN DWORD dwAdditionalFlags, IN HANDLE hTransaction);
 typedef HANDLE (WINAPI *pFindFirstFileTransactedW)(IN LPCWSTR lpFileName, IN FINDEX_INFO_LEVELS fInfoLevelId, OUT LPWIN32_FIND_DATAW lpFindFileData, IN FINDEX_SEARCH_OPS fSearchOp, IN LPVOID lpSearchFilter, IN DWORD dwAdditionalFlags, IN HANDLE hTransaction);
-typedef HANDLE (WINAPI *pFindFirstStreamA)(IN LPCSTR lpFileName, IN STREAM_INFO_LEVELS InfoLevel, OUT LPWIN32_FIND_STREAM_DATAA lpFindStreamData, DWORD dwFlags);
-typedef HANDLE (WINAPI *pFindFirstStreamTransactedA)(IN LPCSTR lpFileName, IN STREAM_INFO_LEVELS InfoLevel, OUT LPWIN32_FIND_STREAM_DATAA lpFindStreamData, IN DWORD dwFlags, IN HANDLE hTransaction);
 typedef HANDLE (WINAPI *pFindFirstStreamTransactedW)(IN LPCWSTR lpFileName, IN STREAM_INFO_LEVELS InfoLevel, OUT LPWIN32_FIND_STREAM_DATAW lpFindStreamData, IN DWORD dwFlags, IN HANDLE hTransaction);
 typedef HANDLE (WINAPI *pFindFirstStreamW)(IN LPCWSTR lpFileName, IN STREAM_INFO_LEVELS InfoLevel, OUT LPWIN32_FIND_STREAM_DATAW lpFindStreamData, DWORD dwFlags);
-typedef BOOL (WINAPI *pFindNextFileNameA)(IN HANDLE hFindStream, OUT LPDWORD StringLength, OUT PSTR LinkName);
 typedef BOOL (WINAPI *pFindNextFileNameW)(IN HANDLE hFindStream, OUT LPDWORD StringLength, OUT PWSTR LinkName);
-typedef BOOL (WINAPI *pFindNextStreamA)(IN HANDLE hFindStream, OUT LPWIN32_FIND_STREAM_DATAA lpFindStreamData);
 typedef BOOL (WINAPI *pFindNextStreamW)(IN HANDLE hFindStream, OUT LPWIN32_FIND_STREAM_DATAW lpFindStreamData);
 typedef DWORD (WINAPI *pGetCompressedFileSizeTransactedA)(IN LPCSTR lpFileName, IN LPDWORD lpFileSizeHigh, IN HANDLE hTransaction);
 typedef DWORD (WINAPI *pGetCompressedFileSizeTransactedW)(IN LPCWSTR lpFileName, IN LPDWORD lpFileSizeHigh, IN HANDLE hTransaction);
@@ -102,7 +97,6 @@ typedef BOOL (WINAPI *pWow64DisableWow64FsRedirection)(OUT PBOOL pbOldValue);
 typedef BOOL (WINAPI *pWow64EnableWow64FsRedirection)(IN BOOL bWow64FsEnableRedirection);
 typedef BOOL (WINAPI *pWow64RevertWow64FsRedirection)(OUT PBOOL pbOldValue);
 
-HMODULE WINAPI LoadSystemLibrary(LPCTSTR lpLibFileName);
 LPWSTR WINAPI AllocateUnicodeString(IN LPCSTR lpString);
 UINT WINAPI AnsiStringToUnicodeString(IN LPCSTR lpAnsiString, OUT LPWSTR lpUnicodeStringBuffer, IN UINT nBufferLength);
 UINT WINAPI UnicodeStringToAnsiString(IN LPCWSTR lpUnicodeString, OUT LPSTR lpAnsiStringBuffer, IN UINT nBufferLength);
@@ -114,16 +108,35 @@ LPWSTR WINAPI GetFullObjectPathExA(IN LPCSTR lpObjectPath, BOOL bForcedLongPathP
 LPWSTR WINAPI GetFullObjectPathExW(IN LPCWSTR lpObjectPath, BOOL bForcedLongPathPrefix);
 LPWSTR WINAPI GetFullObjectPathW(IN LPCWSTR lpObjectPath);
 BOOL WINAPI FreeFullObjectPathBuffer(IN PVOID lpFullObjectPathBuffer);
+#ifdef NTFS_I30_FILTER
+DWORD WINAPI IsNTFSi30PathA(IN LPCSTR lpObjectPath);
+DWORD WINAPI IsNTFSi30PathW(IN LPCWSTR lpObjectPath);
+#endif
 int __cdecl getwinerrnocode(IN unsigned long oserrno);
+
+HMODULE WINAPI LoadSystemLibrary(LPCTSTR lpLibFileName);
+DWORD PreloadPSAPILibrary();
+DWORD PreloadPSAPIProcedure(IN LPCSTR lpszProcedureName, IN FARPROC lpProcedureStubAddress, OUT FARPROC *lpOut);
+DWORD WINAPI preloadGetMappedFileNameA(IN HANDLE hProcess, IN LPVOID lpv, OUT LPSTR lpFilename, IN DWORD nSize);
+DWORD WINAPI preloadGetMappedFileNameW(IN HANDLE hProcess, IN LPVOID lpv, OUT LPWSTR lpFilename, IN DWORD nSize);
+DWORD WINAPI preloadGetModuleFileNameExA(IN HANDLE hProcess, IN HMODULE hModule, OUT LPSTR lpFilename, IN DWORD nSize);
+DWORD WINAPI preloadGetModuleFileNameExW(IN HANDLE hProcess, IN HMODULE hModule, OUT LPWSTR lpFilename, IN DWORD nSize);
 
 UINT WINAPI DeleteSubFolderW(IN LPCWSTR lpPathName);
 
-ULONG NTAPI alternateRtlNtStatusToDosError(IN NTSTATUS Status);
+HANDLE WINAPI FindFirstFileNameA(IN LPCSTR lpFileName, IN DWORD dwFlags, OUT LPDWORD StringLength, OUT PSTR LinkName);
+HANDLE WINAPI FindFirstFileNameTransactedA(IN LPCSTR lpFileName, IN DWORD dwFlags, OUT LPDWORD StringLength, OUT PSTR LinkName, IN HANDLE hTransaction);
+HANDLE WINAPI FindFirstStreamA(IN LPCSTR lpFileName, IN STREAM_INFO_LEVELS InfoLevel, OUT LPVOID lpFindStreamData, DWORD dwFlags);
+HANDLE WINAPI FindFirstStreamTransactedA(IN LPCSTR lpFileName, IN STREAM_INFO_LEVELS InfoLevel, OUT LPVOID lpFindStreamData, IN DWORD dwFlags, IN HANDLE hTransaction);
+BOOL WINAPI FindNextFileNameA(IN HANDLE hFindStream, OUT LPDWORD StringLength, OUT PSTR LinkName);
+BOOL WINAPI FindNextStreamA(IN HANDLE hFindStream, OUT LPWIN32_FIND_STREAM_DATAA lpFindStreamData);
 
-NTSTATUS NTAPI alternateRtlAnsiStringToUnicodeString(OUT PUNICODE_STRING DestinationString, IN PANSI_STRING SourceString, IN BOOL AllocateDestinationString);
-NTSTATUS NTAPI alternateRtlOemStringToUnicodeString(OUT PUNICODE_STRING DestinationString, IN PCOEM_STRING SourceString, IN BOOL AllocateDestinationString);
-NTSTATUS NTAPI alternateRtlUnicodeStringToAnsiString(OUT PANSI_STRING DestinationString, IN PCUNICODE_STRING SourceString, IN BOOL AllocateDestinationString);
-NTSTATUS NTAPI alternateRtlUnicodeStringToOemString(OUT POEM_STRING DestinationString, IN PCUNICODE_STRING SourceString, IN BOOL AllocateDestinationString);
+ULONG NTAPI stubRtlNtStatusToDosError(IN NTSTATUS Status);
+
+NTSTATUS NTAPI stubRtlAnsiStringToUnicodeString(OUT PUNICODE_STRING DestinationString, IN PANSI_STRING SourceString, IN BOOL AllocateDestinationString);
+NTSTATUS NTAPI stubRtlOemStringToUnicodeString(OUT PUNICODE_STRING DestinationString, IN PCOEM_STRING SourceString, IN BOOL AllocateDestinationString);
+NTSTATUS NTAPI stubRtlUnicodeStringToAnsiString(OUT PANSI_STRING DestinationString, IN PCUNICODE_STRING SourceString, IN BOOL AllocateDestinationString);
+NTSTATUS NTAPI stubRtlUnicodeStringToOemString(OUT POEM_STRING DestinationString, IN PCUNICODE_STRING SourceString, IN BOOL AllocateDestinationString);
 
 HRESULT WINAPI stubCopyFile2(IN PCWSTR pwszExistingFileName, IN PCWSTR pwszNewFileName, IN COPYFILE2_EXTENDED_PARAMETERS *pExtendedParameters);
 BOOL WINAPI stubCopyFileTransactedA(IN LPCSTR lpExistingFileName, IN LPCSTR lpNewFileName, IN LPPROGRESS_ROUTINE lpProgressRoutine, IN LPVOID lpData, IN LPBOOL pbCancel, IN DWORD dwCopyFlags, IN HANDLE hTransaction);
@@ -141,19 +154,13 @@ BOOL WINAPI stubCreateSymbolicLinkTransactedW(IN LPCWSTR lpSymlinkFileName, IN L
 BOOL WINAPI stubCreateSymbolicLinkW (IN LPCWSTR lpSymlinkFileName, IN LPCWSTR lpTargetFileName, IN DWORD dwFlags);
 BOOL WINAPI stubDeleteFileTransactedA(IN LPCSTR lpFileName, IN HANDLE hTransaction);
 BOOL WINAPI stubDeleteFileTransactedW(IN LPCWSTR lpFileName, IN HANDLE hTransaction);
-HANDLE WINAPI stubFindFirstFileNameA(IN LPCSTR lpFileName, IN DWORD dwFlags, OUT LPDWORD StringLength, OUT PSTR LinkName);
-HANDLE WINAPI stubFindFirstFileNameTransactedA(IN LPCSTR lpFileName, IN DWORD dwFlags, OUT LPDWORD StringLength, OUT PSTR LinkName, IN HANDLE hTransaction);
 HANDLE WINAPI stubFindFirstFileNameTransactedW(IN LPCWSTR lpFileName, IN DWORD dwFlags, OUT LPDWORD StringLength, OUT PWSTR LinkName, IN HANDLE hTransaction);
 HANDLE WINAPI stubFindFirstFileNameW(IN LPCWSTR lpFileName, IN DWORD dwFlags, OUT LPDWORD StringLength, OUT PWSTR LinkName);
 HANDLE WINAPI stubFindFirstFileTransactedA(IN LPCSTR lpFileName, IN FINDEX_INFO_LEVELS fInfoLevelId, OUT LPVOID lpFindFileData, IN FINDEX_SEARCH_OPS fSearchOp, IN LPVOID lpSearchFilter, IN DWORD dwAdditionalFlags, IN HANDLE hTransaction);
 HANDLE WINAPI stubFindFirstFileTransactedW(IN LPCWSTR lpFileName, IN FINDEX_INFO_LEVELS fInfoLevelId, OUT LPVOID lpFindFileData, IN FINDEX_SEARCH_OPS fSearchOp, IN LPVOID lpSearchFilter, IN DWORD dwAdditionalFlags, IN HANDLE hTransaction);
-HANDLE WINAPI stubFindFirstStreamA(IN LPCSTR lpFileName, IN STREAM_INFO_LEVELS InfoLevel, OUT LPVOID lpFindStreamData, DWORD dwFlags);
-HANDLE WINAPI stubFindFirstStreamTransactedA(IN LPCSTR lpFileName, IN STREAM_INFO_LEVELS InfoLevel, OUT LPVOID lpFindStreamData, IN DWORD dwFlags, IN HANDLE hTransaction);
 HANDLE WINAPI stubFindFirstStreamTransactedW(IN LPCWSTR lpFileName, IN STREAM_INFO_LEVELS InfoLevel, OUT LPVOID lpFindStreamData, IN DWORD dwFlags, IN HANDLE hTransaction);
 HANDLE WINAPI stubFindFirstStreamW(IN LPCWSTR lpFileName, IN STREAM_INFO_LEVELS InfoLevel, OUT LPVOID lpFindStreamData, DWORD dwFlags);
-BOOL WINAPI stubFindNextFileNameA(IN HANDLE hFindStream, OUT LPDWORD StringLength, OUT PSTR LinkName);
 BOOL WINAPI stubFindNextFileNameW(IN HANDLE hFindStream, OUT LPDWORD StringLength, OUT PWSTR LinkName);
-BOOL WINAPI stubFindNextStreamA(IN HANDLE hFindStream, OUT LPWIN32_FIND_STREAM_DATAA lpFindStreamData);
 BOOL WINAPI stubFindNextStreamW(IN HANDLE hFindStream, OUT LPWIN32_FIND_STREAM_DATAW lpFindStreamData);
 DWORD WINAPI stubGetCompressedFileSizeTransactedA(IN LPCSTR lpFileName, IN LPDWORD lpFileSizeHigh, IN HANDLE hTransaction);
 DWORD WINAPI stubGetCompressedFileSizeTransactedW(IN LPCWSTR lpFileName, IN LPDWORD lpFileSizeHigh, IN HANDLE hTransaction);
